@@ -1,1 +1,1 @@
-Sitemap: https://thirstydeveloper.github.io/sitemap.xml
+Sitemap: https://thirstydeveloper.io/sitemap.xml

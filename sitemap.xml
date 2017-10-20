@@ -1,29 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd" xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 <url>
-<loc>https://thirstydeveloper.github.io/jekyll/update/2017/10/17/welcome-to-jekyll.html</loc>
+<loc>https://thirstydeveloper.io/jekyll/update/2017/10/17/welcome-to-jekyll.html</loc>
 <lastmod>2017-10-18T05:53:09+00:00</lastmod>
 </url>
 <url>
-<loc>https://thirstydeveloper.github.io/about/</loc>
+<loc>https://thirstydeveloper.io/about/</loc>
 </url>
 <url>
-<loc>https://thirstydeveloper.github.io/</loc>
+<loc>https://thirstydeveloper.io/</loc>
 </url>
 <url>
-<loc>https://thirstydeveloper.github.io/assets/bower_components/html5shiv/MIT%20and%20GPL2%20licenses.html</loc>
+<loc>https://thirstydeveloper.io/assets/bower_components/html5shiv/MIT%20and%20GPL2%20licenses.html</loc>
 </url>
 <url>
-<loc>https://thirstydeveloper.github.io/assets/bower_components/html5shiv/</loc>
+<loc>https://thirstydeveloper.io/assets/bower_components/html5shiv/</loc>
 </url>
 <url>
-<loc>https://thirstydeveloper.github.io/assets/bower_components/katex/dist/</loc>
+<loc>https://thirstydeveloper.io/assets/bower_components/katex/dist/</loc>
 </url>
 <url>
-<loc>https://thirstydeveloper.github.io/assets/bower_components/webfontloader/</loc>
+<loc>https://thirstydeveloper.io/assets/bower_components/webfontloader/</loc>
 </url>
 <url>
-<loc>https://thirstydeveloper.github.io/assets/icomoon/demo.html</loc>
+<loc>https://thirstydeveloper.io/assets/icomoon/demo.html</loc>
 <lastmod>2017-10-19T00:46:13+00:00</lastmod>
 </url>
 </urlset>
