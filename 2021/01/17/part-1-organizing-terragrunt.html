@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.6.1 -->
+<title>Terraform Skeleton Part 1: Organizing Terragrunt | thirstydeveloper</title>
+<meta name="generator" content="Jekyll v3.9.0" />
+<meta property="og:title" content="Terraform Skeleton Part 1: Organizing Terragrunt" />
+<meta name="author" content="Chris" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Terraform is my go-to infrastructure definition tool. I love that it enables declarative management of different Cloud, PaaS, and SaaS platforms with its unified HCL language and provider model. At times, however, I’ve wished it was easier to start a project off on the right foot." />
+<meta property="og:description" content="Terraform is my go-to infrastructure definition tool. I love that it enables declarative management of different Cloud, PaaS, and SaaS platforms with its unified HCL language and provider model. At times, however, I’ve wished it was easier to start a project off on the right foot." />
+<link rel="canonical" href="https://thirstydeveloper.io/2021/01/17/part-1-organizing-terragrunt.html" />
+<meta property="og:url" content="https://thirstydeveloper.io/2021/01/17/part-1-organizing-terragrunt.html" />
+<meta property="og:site_name" content="thirstydeveloper" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2021-01-17T12:23:00+00:00" />
+<script type="application/ld+json">
+{"description":"Terraform is my go-to infrastructure definition tool. I love that it enables declarative management of different Cloud, PaaS, and SaaS platforms with its unified HCL language and provider model. At times, however, I’ve wished it was easier to start a project off on the right foot.","url":"https://thirstydeveloper.io/2021/01/17/part-1-organizing-terragrunt.html","@type":"BlogPosting","headline":"Terraform Skeleton Part 1: Organizing Terragrunt","dateModified":"2021-01-17T12:23:00+00:00","datePublished":"2021-01-17T12:23:00+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://thirstydeveloper.io/2021/01/17/part-1-organizing-terragrunt.html"},"author":{"@type":"Person","name":"Chris"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/main.css"><link type="application/atom+xml" rel="alternate" href="https://thirstydeveloper.io/feed.xml" title="thirstydeveloper" /><script>
+if(!(window.doNotTrack === "1" || navigator.doNotTrack === "1" || navigator.doNotTrack === "yes" || navigator.msDoNotTrack === "1")) {
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-108404407-1', 'auto');
+  ga('send', 'pageview');
+}
+</script>
+  
+</head>
+<body><header class="site-header" role="banner">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">thirstydeveloper</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a><a class="page-link" href="/series/tf-skeleton.html">Terraform Skeleton</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">Terraform Skeleton Part 1: Organizing Terragrunt</h1>
+    <p class="post-meta"><time class="dt-published" datetime="2021-01-17T12:23:00+00:00" itemprop="datePublished">
+        Jan 17, 2021
+      </time>• 
+          <span itemprop="author" itemscope itemtype="http://schema.org/Person">
+            <span class="p-author h-card" itemprop="name">Chris</span></span>
+        <span class="post-series">
+          • Part of the <a href="/series/tf-skeleton">tf-skeleton series</a>
+        </span><br />
+        <span itemprop="drink"><span class="drink-icon" itemprop="name">☕ </span><span class="h-card" itemprop="name">Costa Rica - Las Lajas </span><span class="h-card" itemprop="name">• <a href="https://catandcloud.com/">Cat & Cloud Coffee </a></span><br />
+          <span class="h-card" itemprop="name">Chemex • 14:1 • 200 °F • Baratza Encore Grind 20</span>
+        </span></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p><a href="https://www.terraform.io/">Terraform</a> is my go-to infrastructure definition tool. I love that it enables declarative management of different Cloud, PaaS, and SaaS platforms with its unified HCL language and provider model. At times, however, I’ve wished it was easier to start a project off on the right foot.</p>
+
+<p>When I was getting started, it wasn’t obvious to me how to organize a terraform project in a way that makes “the easy things easy and the hard things possible” and would scale well as a team grows. <a href="https://terragrunt.gruntwork.io/">Terragrunt</a> helps a great deal, but there are many configuration options, adding to the organizational complexity.</p>
+
+<p>This blog series takes lessons learned from using terraform and terragrunt in production across multiple teams and, over many posts, condenses those lessons into a <a href="https://github.com/thirstydeveloper/terraform-terragrunt-skeleton">walking skeleton repo</a> to serve as a starting point for teams working with terraform and terragrunt. I’ve used this skeleton’s approach for a moderately complex suite of applications spanning multiple clouds and multiple Kubernetes clusters. I’m also using it with a smaller team running a much simpler monolith application. I believe it is a solid starting point, worth sharing with others for consideration.</p>
+
+<p>I’m using semantic versioning to track changes to the skeleton repo. This post covers major-minor version 1.0. The code this post arrives at is available on the release branch for that version <a href="https://github.com/thirstydeveloper/terraform-terragrunt-skeleton/tree/release/1.0">here</a>.</p>
+
+<h1 id="goals">Goals</h1>
+
+<ol>
+  <li>Version control all infrastructure as code</li>
+  <li>Provide a basic safety net of explicit tool versions and pre-commit checks</li>
+  <li>Re-use the same infrastructure definition files across multiple environments</li>
+  <li>Have multiple levels of blast radiuses; allow the engineer to easily apply a small stack of infrastructure or an entire environment</li>
+  <li>Focus on manual infrastructure deployment for now. Continuous Integration will follow. Continuous Delivery will be case-by-case.<sup id="fnref:1" role="doc-noteref"><a href="#fn:1" class="footnote">1</a></sup></li>
+</ol>
+
+<h1 id="setup">Setup</h1>
+
+<p>You’ll need the following installed on your workstation:</p>
+
+<ul>
+  <li><a href="https://git-scm.com/">git</a></li>
+  <li><a href="https://github.com/tfutils/tfenv">tfenv</a> for managing terraform versions<sup id="fnref:2" role="doc-noteref"><a href="#fn:2" class="footnote">2</a></sup></li>
+  <li><a href="https://github.com/cunymatthieu/tgenv">tgenv</a> for managing terragrunt versions</li>
+  <li><a href="https://pre-commit.com/">pre-commit</a> for running syntax, semantic, and style checks on <code class="language-plaintext highlighter-rouge">git commit</code></li>
+</ul>
+
+<h1 id="the-infra-repo">The ‘infra’ repo</h1>
+
+<p>I currently start teams off with a monorepo structure for terraform infrastructure. I admit that having one or more separate modules repositories, as <a href="https://www.terraformupandrunning.com/">Terraform Up &amp; Running</a> advises, is a good destination, but my teams have found it easier to get started making changes within a single repository. The organization that follows works both with mono and distributed repositories, however. Teams I support have made the jump from monorepo to distributed, and it was not painful.<sup id="fnref:3" role="doc-noteref"><a href="#fn:3" class="footnote">3</a></sup></p>
+
+<p>Our team calls our monorepo <code class="language-plaintext highlighter-rouge">infra</code>, and that’s the name I will use here.</p>
+
+<h2 id="step-1-boilerplate">Step 1: Boilerplate</h2>
+
+<p>After installing the tools listed above and creating a new <code class="language-plaintext highlighter-rouge">infra</code> repository:</p>
+
+<ol>
+  <li>
+    <p>Create a CHANGELOG.md</p>
+
+    <p>I like the style of <a href="https://keepachangelog.com/en/1.0.0/">keepachangelog.com</a>.</p>
+  </li>
+  <li>
+    <p>Add a .gitignore</p>
+
+    <p>I use <a href="https://www.toptal.com/developers/gitignore">gitignore.io</a> as a <a href="https://www.toptal.com/developers/gitignore/api/terraform,terragrunt">starting point</a>.</p>
+  </li>
+  <li>
+    <p>Set tool versions</p>
+
+    <p>For instance, if using terraform 0.13.5 and terragrunt 0.26.4 set the versions with:</p>
+
+    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="nb">echo</span> <span class="s2">"0.13.5"</span> <span class="o">&gt;</span> .terraform-version
+ <span class="nb">echo</span> <span class="s2">"0.26.4"</span> <span class="o">&gt;</span> .terragrunt-version
+</code></pre></div>    </div>
+
+    <p>Then install the versions with:</p>
+
+    <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code> tfenv <span class="nb">install
+ </span>tgenv <span class="nb">install</span>
+</code></pre></div>    </div>
+
+    <p>Commit and update your changelog accordingly e.g.,</p>
+
+    <div class="language-markdown highlighter-rouge"><div class="highlight"><pre class="highlight"><code> ## [Unreleased]
+
+ ### Added
+<span class="p"> -</span> terraform version set to 0.13.5
+<span class="p"> -</span> terragrunt version set to 0.26.4
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p>Install pre-commit hooks</p>
+
+    <p>These hooks provide a safety net that gets executed on each <code class="language-plaintext highlighter-rouge">git commit</code>. I’d start with at least the following:<sup id="fnref:4" role="doc-noteref"><a href="#fn:4" class="footnote">4</a></sup></p>
+
+    <ul>
+      <li><a href="https://github.com/antonbabenko/pre-commit-terraform">terraform_fmt hook</a> formats *.tf files using the <a href="https://www.terraform.io/docs/commands/fmt.html">terraform fmt</a> command</li>
+      <li><a href="https://github.com/antonbabenko/pre-commit-terraform">terraform_validate</a> similarly runs <a href="https://www.terraform.io/docs/commands/validate.html">terraform validate</a></li>
+      <li><a href="https://github.com/gruntwork-io/pre-commit">terragrunt-hclfmt</a> runs <a href="https://terragrunt.gruntwork.io/docs/reference/cli-options/#hclfmt">terragrunt hclfmt</a> on terragrunt.hcl files</li>
+    </ul>
+
+    <p><br />You specify these in a <code class="language-plaintext highlighter-rouge">.pre-commit-config.yaml</code> file. <a href="https://github.com/thirstydeveloper/terraform-terragrunt-skeleton/blob/release/1.0/.pre-commit-config.yaml">Here’s</a> what it looks like.</p>
+
+    <p>Next, run <code class="language-plaintext highlighter-rouge">pre-commit install</code> to install the hooks.</p>
+  </li>
+</ol>
+
+<h2 id="step-2-directory-structure">Step 2: Directory Structure</h2>
+
+<p>Covering the directory structure introduces a lot of terms. I start with two top-level directories:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>deployments/
+modules/
+</code></pre></div></div>
+
+<h3 id="deployments">Deployments</h3>
+
+<p><strong>deployments</strong> are instantiations of infrastructure. Directories under deployments contain <code class="language-plaintext highlighter-rouge">terragrunt.hcl</code> files. You run <code class="language-plaintext highlighter-rouge">terragrunt</code> commands inside deployment directories.<sup id="fnref:5" role="doc-noteref"><a href="#fn:5" class="footnote">5</a></sup></p>
+
+<p>Deployments are organized in a directory tree. The first level in the tree is the infrastructure <strong>tiers</strong>. Small projects may just have a single tier of infrastructure. For larger projects, there are often multiple tiers relying or building on each other. Sometimes these tiers are managed by different teams. For instance, my team has a <code class="language-plaintext highlighter-rouge">foundation</code> tier containing shared services like our docker image registry and CI/CD tooling, and a <code class="language-plaintext highlighter-rouge">service</code> tier containing application infrastructure:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>deployments/
+    foundation/
+    service/
+</code></pre></div></div>
+
+<p>Each tier consists of one or more instantiations called <strong>environments</strong>. For instance: development, staging, and production.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>deployments/
+    foundation/
+        dev/
+        stage/
+        prod/
+    service/
+        dev/
+        stage/
+        prod/
+</code></pre></div></div>
+
+<p>Underneath each environment, you have <strong>stacks</strong> and/or <strong>layers</strong> of stacks that make up that tier-environment. Layers are optional directories grouping stacks together. Stacks are bundles of infrastructure that are managed as a unit using terragrunt commands.</p>
+
+<p>For instance, our foundation tier might consist of a <code class="language-plaintext highlighter-rouge">network</code> and <code class="language-plaintext highlighter-rouge">k8s</code> stack, and a <code class="language-plaintext highlighter-rouge">jenkins</code> stack underneath an <code class="language-plaintext highlighter-rouge">apps</code> layer:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>deployments/
+    foundation/
+        dev/
+            network/
+                terragrunt.hcl
+            k8s/
+                terragrunt.hcl
+            apps/
+                jenkins/
+                    terragrunt.hcl
+    root.hcl
+</code></pre></div></div>
+
+<p>Bringing it all together, each <code class="language-plaintext highlighter-rouge">deployment</code> is an instantiation of a stack for a tier-environment. For example, the jenkins stack for the foundation tier’s dev environment, which my team would summarize as foundation-dev-jenkins. To manage foundation-dev-jenkins, you run <code class="language-plaintext highlighter-rouge">terragrunt</code> commands from the <code class="language-plaintext highlighter-rouge">deployments/foundation/dev/apps/jenkins</code> directory.</p>
+
+<p>Deployment directories do not contain the infrastructure definition (.tf) files themselves, however. Instead, each deployment references a stack underneath <code class="language-plaintext highlighter-rouge">modules/stacks/</code>. This allows us to have a single stack definition deployed multiple times - across multiple environments for example.</p>
+
+<h3 id="modules">Modules</h3>
+
+<p>Expanding modules I have:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>deployments/
+modules/
+    components/
+    stacks/
+</code></pre></div></div>
+
+<p><strong>stacks</strong> are root <a href="https://www.terraform.io/docs/configuration/modules.html">terraform modules</a> and group together infrastructure that is managed as a unit. Stacks are defined as directories under <code class="language-plaintext highlighter-rouge">modules/stacks/</code>, organized by tier, and contain the <code class="language-plaintext highlighter-rouge">*.tf</code> files defining the stack’s infrastructure. Using our foundation example from above, <code class="language-plaintext highlighter-rouge">modules/stacks</code> looks like this:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>modules/
+    stacks/
+        foundation/
+            network/
+                ...
+            k8s/
+                ...
+            jenkins/
+                main.tf
+                outputs.tf
+                providers.tf
+                variables.tf
+</code></pre></div></div>
+
+<p>Stacks may contain terraform provider resources directly (e.g., <code class="language-plaintext highlighter-rouge">aws_s3_bucket</code>), but often will contain child terraform modules, which I call <strong>components</strong>.</p>
+
+<p>Any components specific to this <code class="language-plaintext highlighter-rouge">infra</code> repository reside in directories under <code class="language-plaintext highlighter-rouge">modules/components</code>, and those directories similarly contain <code class="language-plaintext highlighter-rouge">*.tf</code> files defining the infrastructure belonging to the component. For example:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>modules/
+    components/
+        some-component/
+            main.tf
+            variables.tf
+            outputs.tf
+        another-component/
+            ...
+</code></pre></div></div>
+
+<p>Summarized, each <strong>deployment</strong> references a <strong>stack</strong>, and each <strong>stack</strong> may instantiate any number of <strong>components</strong>.</p>
+
+<p>You probably noticed the <code class="language-plaintext highlighter-rouge">terragrunt.hcl</code> and <code class="language-plaintext highlighter-rouge">root.hcl</code> files in the example above. Let’s talk about those next.</p>
+
+<h2 id="step-3-hcl-files">Step 3: HCL files</h2>
+
+<p>Each deployment contains a <code class="language-plaintext highlighter-rouge">terragrunt.hcl</code> file, marking it as a stack to be deployed with terragrunt. They are usually extremely simple, only containing an include to the <code class="language-plaintext highlighter-rouge">root.hcl</code> file.<sup id="fnref:6" role="doc-noteref"><a href="#fn:6" class="footnote">6</a></sup></p>
+
+<pre><code class="language-HCL"># terragrunt.hcl
+include {
+  path = find_in_parent_folders("root.hcl")
+}
+</code></pre>
+
+<p>The <code class="language-plaintext highlighter-rouge">root.hcl</code> file contains all the terragrunt configuration. A simple starting point is:</p>
+
+<pre><code class="language-HCL"># root.hcl
+locals {
+  root_deployments_dir       = get_parent_terragrunt_dir()
+  relative_deployment_path   = path_relative_to_include()
+  deployment_path_components = compact(split("/", local.relative_deployment_path))
+
+  tier  = local.deployment_path_components[0]
+  stack = reverse(local.deployment_path_components)[0]
+}
+
+# Default the stack each deployment deploys based on its directory structure
+# Can be overridden by redefining this block in a child terragrunt.hcl
+terraform {
+  source = "${local.root_deployments_dir}/../modules/stacks/${local.tier}/${local.stack}"
+}
+</code></pre>
+
+<p>This makes it so each deployment directory, by default, deploys the stack under <code class="language-plaintext highlighter-rouge">modules/stacks/&lt;tier&gt;</code> with the same name as the deployment directory. For instance, <code class="language-plaintext highlighter-rouge">deployments/foundation/dev/apps/jenkins/</code> deploys <code class="language-plaintext highlighter-rouge">modules/stacks/foundation/jenkins</code>.<sup id="fnref:7" role="doc-noteref"><a href="#fn:7" class="footnote">7</a></sup> I haven’t decided if I like making the layer part of that path or not, so thus far have left it out.</p>
+
+<p>With an understanding of the tools, directory structure, and HCL files, we can put together a minimal skeleton repo.</p>
+
+<h2 id="step-4-the-skeleton">Step 4: The Skeleton</h2>
+
+<p>Here’s a minimal skeleton I would start with, not including boilerplate files:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>deployments/
+    app/
+        dev/
+            test-stack/
+                terragrunt.hcl
+        stage/
+            test-stack/
+                terragrunt.hcl
+        prod/
+            test-stack/
+                terragrunt.hcl
+    root.hcl
+modules/
+    components/
+    stacks/
+        app/
+            test-stack/
+                main.tf
+                outputs.tf
+                providers.tf
+</code></pre></div></div>
+
+<p>Our basic test-stack could use the <a href="https://registry.terraform.io/providers/hashicorp/random/3.0.0">random provider</a> to create a single resource and output:</p>
+
+<div class="language-terraform highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># main.tf</span>
+<span class="k">resource</span> <span class="s2">"random_pet"</span> <span class="s2">"pet"</span> <span class="p">{</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<div class="language-terraform highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># outputs.tf</span>
+<span class="k">output</span> <span class="s2">"pet"</span> <span class="p">{</span>
+  <span class="nx">value</span> <span class="p">=</span> <span class="nx">random_pet</span><span class="p">.</span><span class="nx">pet</span><span class="p">.</span><span class="nx">id</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<div class="language-terraform highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># providers.tf</span>
+<span class="k">terraform</span> <span class="p">{</span>
+  <span class="nx">required_providers</span> <span class="p">{</span>
+    <span class="nx">random</span> <span class="p">=</span> <span class="p">{</span>
+      <span class="nx">source</span>  <span class="p">=</span> <span class="s2">"hashicorp/random"</span>
+      <span class="nx">version</span> <span class="p">=</span> <span class="s2">"~&gt; 3.0.0"</span>
+    <span class="p">}</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>With this in place, we can run <code class="language-plaintext highlighter-rouge">terragrunt plan</code> and <code class="language-plaintext highlighter-rouge">terragrunt apply</code> from any directory under <code class="language-plaintext highlighter-rouge">deployments/</code>. We can also run <a href="https://terragrunt.gruntwork.io/docs/reference/cli-options/#plan-all">plan-all</a> and <a href="https://terragrunt.gruntwork.io/docs/reference/cli-options/#apply-all">apply-all</a> from:</p>
+
+<ol>
+  <li>The root of the repository to affect all tiers and all environments</li>
+  <li>Any directory within deployments to affect everything underneath that directory</li>
+</ol>
+
+<p>We can also use <a href="https://terragrunt.gruntwork.io/docs/reference/cli-options/#terragrunt-exclude-dir">–terragrunt-exclude-dir</a> and <a href="https://terragrunt.gruntwork.io/docs/reference/cli-options/#terragrunt-include-dir">–terragrunt-include-dir</a> to target <code class="language-plaintext highlighter-rouge">*-all</code> commands. For example:</p>
+
+<p><code class="language-plaintext highlighter-rouge">terragrunt apply-all --terragrunt-exclude-dir deployments/*/prod/**</code></p>
+
+<p>would apply all non-production environments across all tiers.</p>
+
+<h1 id="whats-next">What’s next?</h1>
+
+<p>This skeleton is quite minimal. We haven’t covered variables, backends, RBAC, external modules, build tooling, continuous integration, and so on.</p>
+
+<p>The next post will dive deeper into what we can do with <code class="language-plaintext highlighter-rouge">root.hcl</code>, including introducing a variable loading hierarchy that makes our deployments easier to work with.</p>
+
+<h1 id="footnotes">Footnotes</h1>
+
+<div class="footnotes" role="doc-endnotes">
+  <ol>
+    <li id="fn:1" role="doc-endnote">
+      <p>In short, CI/CD with terraform is tricky. The authors of terragrunt discuss some of the challenges <a href="https://github.com/gruntwork-io/terragrunt/issues/720#issuecomment-497888756">here</a>. I’m a proponent of pushing CI/CD for infrastructure, but doing so carefully and expecting times of manual intervention. Some things are difficult to automate out of the box - state migrations (e.g., <code class="language-plaintext highlighter-rouge">terraform state mv</code>) being one example. I’ve trended towards starting teams off with CI and manual applies of infrastructure and working towards CD as the team becomes more comfortable. More on CI/CD in future posts. <a href="#fnref:1" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:2" role="doc-endnote">
+      <p>Terraform stores its state in state files and those state files contain the version of terraform last used. The version specified in the state file is auto-bumped whenever a newer version of terraform touches that state file. Once that happens, you may force anyone working on that infrastructure, <em>or relying on outputs</em> from your state file via <a href="https://www.terraform.io/docs/providers/terraform/d/remote_state.html">terraform_remote_state</a> data sources to upgrade. The second case is the most damaging because it can affect teams outside of your own, depending on who’s using your outputs. <a href="https://github.com/hashicorp/terraform/blob/v0.14/CHANGELOG.md">terraform 0.14</a> addresses this, making state files backward and forward compatible across terraform versions as much as possible, but anyone using older versions of terraform should be particularly careful with terraform versioning. <a href="#fnref:2" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:3" role="doc-endnote">
+      <p>We’ve since split our infrastructure across multiple repositories, but only after demonstrated needs: distributed ownership, differing change/release rates, and re-use across teams. Much like <a href="https://martinfowler.com/bliki/MonolithFirst.html">starting with a monolith</a> before evolving to microservices, starting with an infra monorepo avoids bloat slowing your team unnecessarily. <a href="#fnref:3" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:4" role="doc-endnote">
+
+      <p>There are lots of other tools/hooks that are worth looking at that I haven’t had time to yet. Some on my list to explore include:</p>
+
+      <ul>
+        <li><a href="https://github.com/tfsec/tfsec">tfsec</a> - example <a href="https://github.com/antonbabenko/pre-commit-terraform">hook</a></li>
+        <li><a href="https://github.com/terraform-docs/terraform-docs">terraform docs</a> - example <a href="https://github.com/antonbabenko/pre-commit-terraform">hook</a></li>
+        <li><a href="https://github.com/terraform-linters/tflint">tflint</a> - example <a href="https://github.com/antonbabenko/pre-commit-terraform">hook</a></li>
+        <li><a href="https://www.checkov.io/">checkov</a> - official <a href="https://www.checkov.io/4.Integrations/pre-commit.html">hook</a></li>
+      </ul>
+      <p><a href="#fnref:4" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:5" role="doc-endnote">
+      <p>If you’ve read <a href="https://www.terraformupandrunning.com/">Terraform Up &amp; Running</a>, my <code class="language-plaintext highlighter-rouge">deployments/</code> directory equates to Yevgeniy’s <code class="language-plaintext highlighter-rouge">live/</code> directory. My team just found the name deployments to be more understandable. <a href="#fnref:5" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:6" role="doc-endnote">
+      <p>I use the name <code class="language-plaintext highlighter-rouge">root.hcl</code> instead of <code class="language-plaintext highlighter-rouge">terragrunt.hcl</code> because the latter causes errors running <code class="language-plaintext highlighter-rouge">plan-all</code> and <code class="language-plaintext highlighter-rouge">apply-all</code> from the root or <code class="language-plaintext highlighter-rouge">deployments/</code> directory. Terragrunt seems to treat the parent hcl file as a stack to be deployed and errors out. I tried terragrunt’s <a href="https://terragrunt.gruntwork.io/docs/reference/config-blocks-and-attributes/#skip">skip option</a> but to no avail, at least as of version 0.26.2 <a href="#fnref:6" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:7" role="doc-endnote">
+      <p>Terragrunt glues the deployment to the stack definition by copying everything in the deployment directory and everything in the referenced stack directory (containing the <code class="language-plaintext highlighter-rouge">*.tf</code> files) into a <code class="language-plaintext highlighter-rouge">.terragrunt-cache</code> directory and then executing commands from that directory. By default, the <code class="language-plaintext highlighter-rouge">.terragrunt-cache</code> directory lives in your deployment directory. <a href="#fnref:7" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div><div id="disqus_thread"></div>
+  <script>
+    var disqus_config = function () {
+      this.page.url = 'https://thirstydeveloper.io/2021/01/17/part-1-organizing-terragrunt.html';
+      this.page.identifier = 'https://thirstydeveloper.io/2021/01/17/part-1-organizing-terragrunt.html';
+    };
+
+    (function() {
+      var d = document, s = d.createElement('script');
+
+      s.src = 'https://thirstydeveloper.disqus.com/embed.js';
+
+      s.setAttribute('data-timestamp', +new Date());
+      (d.head || d.body).appendChild(s);
+    })();
+  </script>
+  <noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript" rel="nofollow">comments powered by Disqus.</a></noscript><a class="u-url" href="/2021/01/17/part-1-organizing-terragrunt.html" hidden></a>
+</article>
+
+      </div>
+    </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">thirstydeveloper</h2>
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li class="p-name">Chris Kent</li><li><a class="u-email" href="mailto:thirstydeveloper@gmail.com">thirstydeveloper@gmail.com</a></li></ul>
+      </div>
+
+      <div class="footer-col footer-col-2"><ul class="social-media-list"><li><a href="https://github.com/thirstydeveloper"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#github"></use></svg> <span class="username">thirstydeveloper</span></a></li><li><a href="https://www.linkedin.com/in/thirstydeveloper"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#linkedin"></use></svg> <span class="username">thirstydeveloper</span></a></li><li><a href="https://www.twitter.com/thirstydev"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#twitter"></use></svg> <span class="username">thirstydev</span></a></li><li><a href="/feed.xml"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#rss"></use></svg> <span>rss</span></a></li></ul>
+</div>
+
+      <div class="footer-col footer-col-3">
+        <p>&copy; 2021 Chris Kent. All Rights Reserved. </p>
+      </div>
+    </div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>

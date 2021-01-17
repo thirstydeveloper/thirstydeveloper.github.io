@@ -1,1 +1,326 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.9.0">Jekyll</generator><link href="https://thirstydeveloper.io/feed.xml" rel="self" type="application/atom+xml" /><link href="https://thirstydeveloper.io/" rel="alternate" type="text/html" /><updated>2021-01-17T12:04:34+00:00</updated><id>https://thirstydeveloper.io/feed.xml</id><title type="html">thirstydeveloper</title><subtitle>Infrastructure-as-Code-as-a-Team</subtitle><author><name>Chris Kent</name></author></feed>
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.9.0">Jekyll</generator><link href="https://thirstydeveloper.io/feed.xml" rel="self" type="application/atom+xml" /><link href="https://thirstydeveloper.io/" rel="alternate" type="text/html" /><updated>2021-01-17T13:13:28+00:00</updated><id>https://thirstydeveloper.io/feed.xml</id><title type="html">thirstydeveloper</title><subtitle>Infrastructure-as-Code-as-a-Team</subtitle><author><name>Chris Kent</name></author><entry><title type="html">Terraform Skeleton Part 1: Organizing Terragrunt</title><link href="https://thirstydeveloper.io/2021/01/17/part-1-organizing-terragrunt.html" rel="alternate" type="text/html" title="Terraform Skeleton Part 1: Organizing Terragrunt" /><published>2021-01-17T12:23:00+00:00</published><updated>2021-01-17T12:23:00+00:00</updated><id>https://thirstydeveloper.io/2021/01/17/part-1-organizing-terragrunt</id><content type="html" xml:base="https://thirstydeveloper.io/2021/01/17/part-1-organizing-terragrunt.html">&lt;p&gt;&lt;a href=&quot;https://www.terraform.io/&quot;&gt;Terraform&lt;/a&gt; is my go-to infrastructure definition tool. I love that it enables declarative management of different Cloud, PaaS, and SaaS platforms with its unified HCL language and provider model. At times, however, I’ve wished it was easier to start a project off on the right foot.&lt;/p&gt;
+
+&lt;p&gt;When I was getting started, it wasn’t obvious to me how to organize a terraform project in a way that makes “the easy things easy and the hard things possible” and would scale well as a team grows. &lt;a href=&quot;https://terragrunt.gruntwork.io/&quot;&gt;Terragrunt&lt;/a&gt; helps a great deal, but there are many configuration options, adding to the organizational complexity.&lt;/p&gt;
+
+&lt;p&gt;This blog series takes lessons learned from using terraform and terragrunt in production across multiple teams and, over many posts, condenses those lessons into a &lt;a href=&quot;https://github.com/thirstydeveloper/terraform-terragrunt-skeleton&quot;&gt;walking skeleton repo&lt;/a&gt; to serve as a starting point for teams working with terraform and terragrunt. I’ve used this skeleton’s approach for a moderately complex suite of applications spanning multiple clouds and multiple Kubernetes clusters. I’m also using it with a smaller team running a much simpler monolith application. I believe it is a solid starting point, worth sharing with others for consideration.&lt;/p&gt;
+
+&lt;p&gt;I’m using semantic versioning to track changes to the skeleton repo. This post covers major-minor version 1.0. The code this post arrives at is available on the release branch for that version &lt;a href=&quot;https://github.com/thirstydeveloper/terraform-terragrunt-skeleton/tree/release/1.0&quot;&gt;here&lt;/a&gt;.&lt;/p&gt;
+
+&lt;h1 id=&quot;goals&quot;&gt;Goals&lt;/h1&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Version control all infrastructure as code&lt;/li&gt;
+  &lt;li&gt;Provide a basic safety net of explicit tool versions and pre-commit checks&lt;/li&gt;
+  &lt;li&gt;Re-use the same infrastructure definition files across multiple environments&lt;/li&gt;
+  &lt;li&gt;Have multiple levels of blast radiuses; allow the engineer to easily apply a small stack of infrastructure or an entire environment&lt;/li&gt;
+  &lt;li&gt;Focus on manual infrastructure deployment for now. Continuous Integration will follow. Continuous Delivery will be case-by-case.&lt;sup id=&quot;fnref:1&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:1&quot; class=&quot;footnote&quot;&gt;1&lt;/a&gt;&lt;/sup&gt;&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h1 id=&quot;setup&quot;&gt;Setup&lt;/h1&gt;
+
+&lt;p&gt;You’ll need the following installed on your workstation:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://git-scm.com/&quot;&gt;git&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://github.com/tfutils/tfenv&quot;&gt;tfenv&lt;/a&gt; for managing terraform versions&lt;sup id=&quot;fnref:2&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:2&quot; class=&quot;footnote&quot;&gt;2&lt;/a&gt;&lt;/sup&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://github.com/cunymatthieu/tgenv&quot;&gt;tgenv&lt;/a&gt; for managing terragrunt versions&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://pre-commit.com/&quot;&gt;pre-commit&lt;/a&gt; for running syntax, semantic, and style checks on &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;git commit&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h1 id=&quot;the-infra-repo&quot;&gt;The ‘infra’ repo&lt;/h1&gt;
+
+&lt;p&gt;I currently start teams off with a monorepo structure for terraform infrastructure. I admit that having one or more separate modules repositories, as &lt;a href=&quot;https://www.terraformupandrunning.com/&quot;&gt;Terraform Up &amp;amp; Running&lt;/a&gt; advises, is a good destination, but my teams have found it easier to get started making changes within a single repository. The organization that follows works both with mono and distributed repositories, however. Teams I support have made the jump from monorepo to distributed, and it was not painful.&lt;sup id=&quot;fnref:3&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:3&quot; class=&quot;footnote&quot;&gt;3&lt;/a&gt;&lt;/sup&gt;&lt;/p&gt;
+
+&lt;p&gt;Our team calls our monorepo &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;infra&lt;/code&gt;, and that’s the name I will use here.&lt;/p&gt;
+
+&lt;h2 id=&quot;step-1-boilerplate&quot;&gt;Step 1: Boilerplate&lt;/h2&gt;
+
+&lt;p&gt;After installing the tools listed above and creating a new &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;infra&lt;/code&gt; repository:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;
+    &lt;p&gt;Create a CHANGELOG.md&lt;/p&gt;
+
+    &lt;p&gt;I like the style of &lt;a href=&quot;https://keepachangelog.com/en/1.0.0/&quot;&gt;keepachangelog.com&lt;/a&gt;.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Add a .gitignore&lt;/p&gt;
+
+    &lt;p&gt;I use &lt;a href=&quot;https://www.toptal.com/developers/gitignore&quot;&gt;gitignore.io&lt;/a&gt; as a &lt;a href=&quot;https://www.toptal.com/developers/gitignore/api/terraform,terragrunt&quot;&gt;starting point&lt;/a&gt;.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Set tool versions&lt;/p&gt;
+
+    &lt;p&gt;For instance, if using terraform 0.13.5 and terragrunt 0.26.4 set the versions with:&lt;/p&gt;
+
+    &lt;div class=&quot;language-bash highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt; &lt;span class=&quot;nb&quot;&gt;echo&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&quot;0.13.5&quot;&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;gt;&lt;/span&gt; .terraform-version
+ &lt;span class=&quot;nb&quot;&gt;echo&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&quot;0.26.4&quot;&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;gt;&lt;/span&gt; .terragrunt-version
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+
+    &lt;p&gt;Then install the versions with:&lt;/p&gt;
+
+    &lt;div class=&quot;language-bash highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt; tfenv &lt;span class=&quot;nb&quot;&gt;install
+ &lt;/span&gt;tgenv &lt;span class=&quot;nb&quot;&gt;install&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+
+    &lt;p&gt;Commit and update your changelog accordingly e.g.,&lt;/p&gt;
+
+    &lt;div class=&quot;language-markdown highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt; ## [Unreleased]
+
+ ### Added
+&lt;span class=&quot;p&quot;&gt; -&lt;/span&gt; terraform version set to 0.13.5
+&lt;span class=&quot;p&quot;&gt; -&lt;/span&gt; terragrunt version set to 0.26.4
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;    &lt;/div&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Install pre-commit hooks&lt;/p&gt;
+
+    &lt;p&gt;These hooks provide a safety net that gets executed on each &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;git commit&lt;/code&gt;. I’d start with at least the following:&lt;sup id=&quot;fnref:4&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:4&quot; class=&quot;footnote&quot;&gt;4&lt;/a&gt;&lt;/sup&gt;&lt;/p&gt;
+
+    &lt;ul&gt;
+      &lt;li&gt;&lt;a href=&quot;https://github.com/antonbabenko/pre-commit-terraform&quot;&gt;terraform_fmt hook&lt;/a&gt; formats *.tf files using the &lt;a href=&quot;https://www.terraform.io/docs/commands/fmt.html&quot;&gt;terraform fmt&lt;/a&gt; command&lt;/li&gt;
+      &lt;li&gt;&lt;a href=&quot;https://github.com/antonbabenko/pre-commit-terraform&quot;&gt;terraform_validate&lt;/a&gt; similarly runs &lt;a href=&quot;https://www.terraform.io/docs/commands/validate.html&quot;&gt;terraform validate&lt;/a&gt;&lt;/li&gt;
+      &lt;li&gt;&lt;a href=&quot;https://github.com/gruntwork-io/pre-commit&quot;&gt;terragrunt-hclfmt&lt;/a&gt; runs &lt;a href=&quot;https://terragrunt.gruntwork.io/docs/reference/cli-options/#hclfmt&quot;&gt;terragrunt hclfmt&lt;/a&gt; on terragrunt.hcl files&lt;/li&gt;
+    &lt;/ul&gt;
+
+    &lt;p&gt;&lt;br /&gt;You specify these in a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;.pre-commit-config.yaml&lt;/code&gt; file. &lt;a href=&quot;https://github.com/thirstydeveloper/terraform-terragrunt-skeleton/blob/release/1.0/.pre-commit-config.yaml&quot;&gt;Here’s&lt;/a&gt; what it looks like.&lt;/p&gt;
+
+    &lt;p&gt;Next, run &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;pre-commit install&lt;/code&gt; to install the hooks.&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h2 id=&quot;step-2-directory-structure&quot;&gt;Step 2: Directory Structure&lt;/h2&gt;
+
+&lt;p&gt;Covering the directory structure introduces a lot of terms. I start with two top-level directories:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;deployments/
+modules/
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h3 id=&quot;deployments&quot;&gt;Deployments&lt;/h3&gt;
+
+&lt;p&gt;&lt;strong&gt;deployments&lt;/strong&gt; are instantiations of infrastructure. Directories under deployments contain &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terragrunt.hcl&lt;/code&gt; files. You run &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terragrunt&lt;/code&gt; commands inside deployment directories.&lt;sup id=&quot;fnref:5&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:5&quot; class=&quot;footnote&quot;&gt;5&lt;/a&gt;&lt;/sup&gt;&lt;/p&gt;
+
+&lt;p&gt;Deployments are organized in a directory tree. The first level in the tree is the infrastructure &lt;strong&gt;tiers&lt;/strong&gt;. Small projects may just have a single tier of infrastructure. For larger projects, there are often multiple tiers relying or building on each other. Sometimes these tiers are managed by different teams. For instance, my team has a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;foundation&lt;/code&gt; tier containing shared services like our docker image registry and CI/CD tooling, and a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;service&lt;/code&gt; tier containing application infrastructure:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;deployments/
+    foundation/
+    service/
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Each tier consists of one or more instantiations called &lt;strong&gt;environments&lt;/strong&gt;. For instance: development, staging, and production.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;deployments/
+    foundation/
+        dev/
+        stage/
+        prod/
+    service/
+        dev/
+        stage/
+        prod/
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Underneath each environment, you have &lt;strong&gt;stacks&lt;/strong&gt; and/or &lt;strong&gt;layers&lt;/strong&gt; of stacks that make up that tier-environment. Layers are optional directories grouping stacks together. Stacks are bundles of infrastructure that are managed as a unit using terragrunt commands.&lt;/p&gt;
+
+&lt;p&gt;For instance, our foundation tier might consist of a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;network&lt;/code&gt; and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;k8s&lt;/code&gt; stack, and a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;jenkins&lt;/code&gt; stack underneath an &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;apps&lt;/code&gt; layer:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;deployments/
+    foundation/
+        dev/
+            network/
+                terragrunt.hcl
+            k8s/
+                terragrunt.hcl
+            apps/
+                jenkins/
+                    terragrunt.hcl
+    root.hcl
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Bringing it all together, each &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;deployment&lt;/code&gt; is an instantiation of a stack for a tier-environment. For example, the jenkins stack for the foundation tier’s dev environment, which my team would summarize as foundation-dev-jenkins. To manage foundation-dev-jenkins, you run &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terragrunt&lt;/code&gt; commands from the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;deployments/foundation/dev/apps/jenkins&lt;/code&gt; directory.&lt;/p&gt;
+
+&lt;p&gt;Deployment directories do not contain the infrastructure definition (.tf) files themselves, however. Instead, each deployment references a stack underneath &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;modules/stacks/&lt;/code&gt;. This allows us to have a single stack definition deployed multiple times - across multiple environments for example.&lt;/p&gt;
+
+&lt;h3 id=&quot;modules&quot;&gt;Modules&lt;/h3&gt;
+
+&lt;p&gt;Expanding modules I have:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;deployments/
+modules/
+    components/
+    stacks/
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;strong&gt;stacks&lt;/strong&gt; are root &lt;a href=&quot;https://www.terraform.io/docs/configuration/modules.html&quot;&gt;terraform modules&lt;/a&gt; and group together infrastructure that is managed as a unit. Stacks are defined as directories under &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;modules/stacks/&lt;/code&gt;, organized by tier, and contain the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;*.tf&lt;/code&gt; files defining the stack’s infrastructure. Using our foundation example from above, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;modules/stacks&lt;/code&gt; looks like this:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;modules/
+    stacks/
+        foundation/
+            network/
+                ...
+            k8s/
+                ...
+            jenkins/
+                main.tf
+                outputs.tf
+                providers.tf
+                variables.tf
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Stacks may contain terraform provider resources directly (e.g., &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;aws_s3_bucket&lt;/code&gt;), but often will contain child terraform modules, which I call &lt;strong&gt;components&lt;/strong&gt;.&lt;/p&gt;
+
+&lt;p&gt;Any components specific to this &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;infra&lt;/code&gt; repository reside in directories under &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;modules/components&lt;/code&gt;, and those directories similarly contain &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;*.tf&lt;/code&gt; files defining the infrastructure belonging to the component. For example:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;modules/
+    components/
+        some-component/
+            main.tf
+            variables.tf
+            outputs.tf
+        another-component/
+            ...
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Summarized, each &lt;strong&gt;deployment&lt;/strong&gt; references a &lt;strong&gt;stack&lt;/strong&gt;, and each &lt;strong&gt;stack&lt;/strong&gt; may instantiate any number of &lt;strong&gt;components&lt;/strong&gt;.&lt;/p&gt;
+
+&lt;p&gt;You probably noticed the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terragrunt.hcl&lt;/code&gt; and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;root.hcl&lt;/code&gt; files in the example above. Let’s talk about those next.&lt;/p&gt;
+
+&lt;h2 id=&quot;step-3-hcl-files&quot;&gt;Step 3: HCL files&lt;/h2&gt;
+
+&lt;p&gt;Each deployment contains a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terragrunt.hcl&lt;/code&gt; file, marking it as a stack to be deployed with terragrunt. They are usually extremely simple, only containing an include to the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;root.hcl&lt;/code&gt; file.&lt;sup id=&quot;fnref:6&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:6&quot; class=&quot;footnote&quot;&gt;6&lt;/a&gt;&lt;/sup&gt;&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-HCL&quot;&gt;# terragrunt.hcl
+include {
+  path = find_in_parent_folders(&quot;root.hcl&quot;)
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;The &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;root.hcl&lt;/code&gt; file contains all the terragrunt configuration. A simple starting point is:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-HCL&quot;&gt;# root.hcl
+locals {
+  root_deployments_dir       = get_parent_terragrunt_dir()
+  relative_deployment_path   = path_relative_to_include()
+  deployment_path_components = compact(split(&quot;/&quot;, local.relative_deployment_path))
+
+  tier  = local.deployment_path_components[0]
+  stack = reverse(local.deployment_path_components)[0]
+}
+
+# Default the stack each deployment deploys based on its directory structure
+# Can be overridden by redefining this block in a child terragrunt.hcl
+terraform {
+  source = &quot;${local.root_deployments_dir}/../modules/stacks/${local.tier}/${local.stack}&quot;
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;This makes it so each deployment directory, by default, deploys the stack under &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;modules/stacks/&amp;lt;tier&amp;gt;&lt;/code&gt; with the same name as the deployment directory. For instance, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;deployments/foundation/dev/apps/jenkins/&lt;/code&gt; deploys &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;modules/stacks/foundation/jenkins&lt;/code&gt;.&lt;sup id=&quot;fnref:7&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:7&quot; class=&quot;footnote&quot;&gt;7&lt;/a&gt;&lt;/sup&gt; I haven’t decided if I like making the layer part of that path or not, so thus far have left it out.&lt;/p&gt;
+
+&lt;p&gt;With an understanding of the tools, directory structure, and HCL files, we can put together a minimal skeleton repo.&lt;/p&gt;
+
+&lt;h2 id=&quot;step-4-the-skeleton&quot;&gt;Step 4: The Skeleton&lt;/h2&gt;
+
+&lt;p&gt;Here’s a minimal skeleton I would start with, not including boilerplate files:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;deployments/
+    app/
+        dev/
+            test-stack/
+                terragrunt.hcl
+        stage/
+            test-stack/
+                terragrunt.hcl
+        prod/
+            test-stack/
+                terragrunt.hcl
+    root.hcl
+modules/
+    components/
+    stacks/
+        app/
+            test-stack/
+                main.tf
+                outputs.tf
+                providers.tf
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Our basic test-stack could use the &lt;a href=&quot;https://registry.terraform.io/providers/hashicorp/random/3.0.0&quot;&gt;random provider&lt;/a&gt; to create a single resource and output:&lt;/p&gt;
+
+&lt;div class=&quot;language-terraform highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;c1&quot;&gt;# main.tf&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;resource&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&quot;random_pet&quot;&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&quot;pet&quot;&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;div class=&quot;language-terraform highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;c1&quot;&gt;# outputs.tf&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;output&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&quot;pet&quot;&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+  &lt;span class=&quot;nx&quot;&gt;value&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nx&quot;&gt;random_pet&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nx&quot;&gt;pet&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nx&quot;&gt;id&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;div class=&quot;language-terraform highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;c1&quot;&gt;# providers.tf&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;terraform&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+  &lt;span class=&quot;nx&quot;&gt;required_providers&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;nx&quot;&gt;random&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+      &lt;span class=&quot;nx&quot;&gt;source&lt;/span&gt;  &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&quot;hashicorp/random&quot;&lt;/span&gt;
+      &lt;span class=&quot;nx&quot;&gt;version&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&quot;~&amp;gt; 3.0.0&quot;&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+  &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;With this in place, we can run &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terragrunt plan&lt;/code&gt; and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terragrunt apply&lt;/code&gt; from any directory under &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;deployments/&lt;/code&gt;. We can also run &lt;a href=&quot;https://terragrunt.gruntwork.io/docs/reference/cli-options/#plan-all&quot;&gt;plan-all&lt;/a&gt; and &lt;a href=&quot;https://terragrunt.gruntwork.io/docs/reference/cli-options/#apply-all&quot;&gt;apply-all&lt;/a&gt; from:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;The root of the repository to affect all tiers and all environments&lt;/li&gt;
+  &lt;li&gt;Any directory within deployments to affect everything underneath that directory&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;We can also use &lt;a href=&quot;https://terragrunt.gruntwork.io/docs/reference/cli-options/#terragrunt-exclude-dir&quot;&gt;–terragrunt-exclude-dir&lt;/a&gt; and &lt;a href=&quot;https://terragrunt.gruntwork.io/docs/reference/cli-options/#terragrunt-include-dir&quot;&gt;–terragrunt-include-dir&lt;/a&gt; to target &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;*-all&lt;/code&gt; commands. For example:&lt;/p&gt;
+
+&lt;p&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terragrunt apply-all --terragrunt-exclude-dir deployments/*/prod/**&lt;/code&gt;&lt;/p&gt;
+
+&lt;p&gt;would apply all non-production environments across all tiers.&lt;/p&gt;
+
+&lt;h1 id=&quot;whats-next&quot;&gt;What’s next?&lt;/h1&gt;
+
+&lt;p&gt;This skeleton is quite minimal. We haven’t covered variables, backends, RBAC, external modules, build tooling, continuous integration, and so on.&lt;/p&gt;
+
+&lt;p&gt;The next post will dive deeper into what we can do with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;root.hcl&lt;/code&gt;, including introducing a variable loading hierarchy that makes our deployments easier to work with.&lt;/p&gt;
+
+&lt;h1 id=&quot;footnotes&quot;&gt;Footnotes&lt;/h1&gt;
+
+&lt;div class=&quot;footnotes&quot; role=&quot;doc-endnotes&quot;&gt;
+  &lt;ol&gt;
+    &lt;li id=&quot;fn:1&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;In short, CI/CD with terraform is tricky. The authors of terragrunt discuss some of the challenges &lt;a href=&quot;https://github.com/gruntwork-io/terragrunt/issues/720#issuecomment-497888756&quot;&gt;here&lt;/a&gt;. I’m a proponent of pushing CI/CD for infrastructure, but doing so carefully and expecting times of manual intervention. Some things are difficult to automate out of the box - state migrations (e.g., &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terraform state mv&lt;/code&gt;) being one example. I’ve trended towards starting teams off with CI and manual applies of infrastructure and working towards CD as the team becomes more comfortable. More on CI/CD in future posts. &lt;a href=&quot;#fnref:1&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:2&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;Terraform stores its state in state files and those state files contain the version of terraform last used. The version specified in the state file is auto-bumped whenever a newer version of terraform touches that state file. Once that happens, you may force anyone working on that infrastructure, &lt;em&gt;or relying on outputs&lt;/em&gt; from your state file via &lt;a href=&quot;https://www.terraform.io/docs/providers/terraform/d/remote_state.html&quot;&gt;terraform_remote_state&lt;/a&gt; data sources to upgrade. The second case is the most damaging because it can affect teams outside of your own, depending on who’s using your outputs. &lt;a href=&quot;https://github.com/hashicorp/terraform/blob/v0.14/CHANGELOG.md&quot;&gt;terraform 0.14&lt;/a&gt; addresses this, making state files backward and forward compatible across terraform versions as much as possible, but anyone using older versions of terraform should be particularly careful with terraform versioning. &lt;a href=&quot;#fnref:2&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:3&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;We’ve since split our infrastructure across multiple repositories, but only after demonstrated needs: distributed ownership, differing change/release rates, and re-use across teams. Much like &lt;a href=&quot;https://martinfowler.com/bliki/MonolithFirst.html&quot;&gt;starting with a monolith&lt;/a&gt; before evolving to microservices, starting with an infra monorepo avoids bloat slowing your team unnecessarily. &lt;a href=&quot;#fnref:3&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:4&quot; role=&quot;doc-endnote&quot;&gt;
+
+      &lt;p&gt;There are lots of other tools/hooks that are worth looking at that I haven’t had time to yet. Some on my list to explore include:&lt;/p&gt;
+
+      &lt;ul&gt;
+        &lt;li&gt;&lt;a href=&quot;https://github.com/tfsec/tfsec&quot;&gt;tfsec&lt;/a&gt; - example &lt;a href=&quot;https://github.com/antonbabenko/pre-commit-terraform&quot;&gt;hook&lt;/a&gt;&lt;/li&gt;
+        &lt;li&gt;&lt;a href=&quot;https://github.com/terraform-docs/terraform-docs&quot;&gt;terraform docs&lt;/a&gt; - example &lt;a href=&quot;https://github.com/antonbabenko/pre-commit-terraform&quot;&gt;hook&lt;/a&gt;&lt;/li&gt;
+        &lt;li&gt;&lt;a href=&quot;https://github.com/terraform-linters/tflint&quot;&gt;tflint&lt;/a&gt; - example &lt;a href=&quot;https://github.com/antonbabenko/pre-commit-terraform&quot;&gt;hook&lt;/a&gt;&lt;/li&gt;
+        &lt;li&gt;&lt;a href=&quot;https://www.checkov.io/&quot;&gt;checkov&lt;/a&gt; - official &lt;a href=&quot;https://www.checkov.io/4.Integrations/pre-commit.html&quot;&gt;hook&lt;/a&gt;&lt;/li&gt;
+      &lt;/ul&gt;
+      &lt;p&gt;&lt;a href=&quot;#fnref:4&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:5&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;If you’ve read &lt;a href=&quot;https://www.terraformupandrunning.com/&quot;&gt;Terraform Up &amp;amp; Running&lt;/a&gt;, my &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;deployments/&lt;/code&gt; directory equates to Yevgeniy’s &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;live/&lt;/code&gt; directory. My team just found the name deployments to be more understandable. &lt;a href=&quot;#fnref:5&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:6&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;I use the name &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;root.hcl&lt;/code&gt; instead of &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terragrunt.hcl&lt;/code&gt; because the latter causes errors running &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;plan-all&lt;/code&gt; and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;apply-all&lt;/code&gt; from the root or &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;deployments/&lt;/code&gt; directory. Terragrunt seems to treat the parent hcl file as a stack to be deployed and errors out. I tried terragrunt’s &lt;a href=&quot;https://terragrunt.gruntwork.io/docs/reference/config-blocks-and-attributes/#skip&quot;&gt;skip option&lt;/a&gt; but to no avail, at least as of version 0.26.2 &lt;a href=&quot;#fnref:6&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:7&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;Terragrunt glues the deployment to the stack definition by copying everything in the deployment directory and everything in the referenced stack directory (containing the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;*.tf&lt;/code&gt; files) into a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;.terragrunt-cache&lt;/code&gt; directory and then executing commands from that directory. By default, the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;.terragrunt-cache&lt;/code&gt; directory lives in your deployment directory. &lt;a href=&quot;#fnref:7&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+  &lt;/ol&gt;
+&lt;/div&gt;</content><author><name>Chris</name></author><category term="terraform" /><category term="terragrunt" /><summary type="html">Terraform is my go-to infrastructure definition tool. I love that it enables declarative management of different Cloud, PaaS, and SaaS platforms with its unified HCL language and provider model. At times, however, I’ve wished it was easier to start a project off on the right foot.</summary></entry></feed>
