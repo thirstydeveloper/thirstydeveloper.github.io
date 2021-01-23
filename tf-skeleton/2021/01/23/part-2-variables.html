@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.6.1 -->
+<title>Terraform Skeleton Part 2: Variables | thirstydeveloper</title>
+<meta name="generator" content="Jekyll v3.9.0" />
+<meta property="og:title" content="Terraform Skeleton Part 2: Variables" />
+<meta name="author" content="Chris" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="In part 1 of the terraform skeleton series, we set up a terraform repository that allows the team to apply infrastructure at any level: from individual stacks to entire environments. We build on that foundation in this post, adding a variable hierarchy that similarly allows definition and overriding of variables at each level of the infrastructure." />
+<meta property="og:description" content="In part 1 of the terraform skeleton series, we set up a terraform repository that allows the team to apply infrastructure at any level: from individual stacks to entire environments. We build on that foundation in this post, adding a variable hierarchy that similarly allows definition and overriding of variables at each level of the infrastructure." />
+<link rel="canonical" href="https://thirstydeveloper.io/tf-skeleton/2021/01/23/part-2-variables.html" />
+<meta property="og:url" content="https://thirstydeveloper.io/tf-skeleton/2021/01/23/part-2-variables.html" />
+<meta property="og:site_name" content="thirstydeveloper" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2021-01-23T10:53:09+00:00" />
+<script type="application/ld+json">
+{"description":"In part 1 of the terraform skeleton series, we set up a terraform repository that allows the team to apply infrastructure at any level: from individual stacks to entire environments. We build on that foundation in this post, adding a variable hierarchy that similarly allows definition and overriding of variables at each level of the infrastructure.","url":"https://thirstydeveloper.io/tf-skeleton/2021/01/23/part-2-variables.html","@type":"BlogPosting","headline":"Terraform Skeleton Part 2: Variables","dateModified":"2021-01-23T10:53:09+00:00","datePublished":"2021-01-23T10:53:09+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://thirstydeveloper.io/tf-skeleton/2021/01/23/part-2-variables.html"},"author":{"@type":"Person","name":"Chris"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/main.css"><link type="application/atom+xml" rel="alternate" href="https://thirstydeveloper.io/feed.xml" title="thirstydeveloper" /><script>
+if(!(window.doNotTrack === "1" || navigator.doNotTrack === "1" || navigator.doNotTrack === "yes" || navigator.msDoNotTrack === "1")) {
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-108404407-1', 'auto');
+  ga('send', 'pageview');
+}
+</script>
+  
+</head>
+<body><header class="site-header" role="banner">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">thirstydeveloper</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a><a class="page-link" href="/series/tf-skeleton.html">Terraform Skeleton</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">Terraform Skeleton Part 2: Variables</h1>
+    <p class="post-meta"><time class="dt-published" datetime="2021-01-23T10:53:09+00:00" itemprop="datePublished">
+        Jan 23, 2021
+      </time>• 
+          <span itemprop="author" itemscope itemtype="http://schema.org/Person">
+            <span class="p-author h-card" itemprop="name">Chris</span></span>
+        <span class="post-series">
+          • Part of the <a href="/series/tf-skeleton">tf-skeleton series</a>
+        </span><br />
+        <span itemprop="drink"><span class="drink-icon" itemprop="name">☕ </span><span class="h-card" itemprop="name"><a href="https://www.drinktrade.com/founders-blend/p/583">Founder's Blend </a></span><span class="h-card" itemprop="name">• <a href="https://www.stumptowncoffee.com/">Stumptown Coffee Roasters </a></span><br />
+          <span class="h-card" itemprop="name">Drip • 17:1 • Baratza Encore Grind 19</span>
+        </span></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p>In <a href="/2021/01/17/part-1-organizing-terragrunt.html">part 1</a> of the <a href="/series/tf-skeleton.html">terraform skeleton series</a>, we set up a <a href="https://github.com/thirstydeveloper/terraform-terragrunt-skeleton/tree/release/1.0">terraform repository</a> that allows the team to apply infrastructure at any level: from individual stacks to entire environments. We build on that foundation in this post, adding a variable hierarchy that similarly allows definition and overriding of variables at each level of the infrastructure.</p>
+
+<h1 id="goals">Goals</h1>
+
+<p>As a refresher, our infrastructure is organized by:</p>
+
+<ul>
+  <li>Tier</li>
+  <li>Environment</li>
+  <li>Layer (Optional)</li>
+  <li>Stack</li>
+</ul>
+
+<p>A <strong>deployment</strong> is an instantiation of a stack for a tier-environment.</p>
+
+<p>Today’s goals are to:</p>
+
+<ul>
+  <li>Allow defining variable values in files at each level of the infrastructure</li>
+  <li>Have lower-level variable definitions override higher levels</li>
+</ul>
+
+<p>If you prefer to jump to the end, the code implementing the final result is available on <a href="https://github.com/thirstydeveloper/terraform-terragrunt-skeleton/tree/release/1.1">GitHub</a>.</p>
+
+<h1 id="setup">Setup</h1>
+
+<p>Let’s add to our test-stack some variables to be defined at each level of <code class="language-plaintext highlighter-rouge">deployments/</code>:</p>
+
+<div class="language-terraform highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># modules/stacks/app/test-stack/variables.tf</span>
+<span class="k">variable</span> <span class="s2">"global_var"</span> <span class="p">{</span>
+  <span class="nx">default</span> <span class="p">=</span> <span class="s2">"unset"</span>
+<span class="p">}</span>
+
+<span class="k">variable</span> <span class="s2">"tier_var"</span> <span class="p">{</span>
+  <span class="nx">default</span> <span class="p">=</span> <span class="s2">"unset"</span>
+<span class="p">}</span>
+
+<span class="k">variable</span> <span class="s2">"env_var"</span> <span class="p">{</span>
+  <span class="nx">default</span> <span class="p">=</span> <span class="s2">"unset"</span>
+<span class="p">}</span>
+
+<span class="k">variable</span> <span class="s2">"layer_var"</span> <span class="p">{</span>
+  <span class="nx">default</span> <span class="p">=</span> <span class="s2">"unset"</span>
+<span class="p">}</span>
+
+<span class="k">variable</span> <span class="s2">"stack_var"</span> <span class="p">{</span>
+  <span class="nx">default</span> <span class="p">=</span> <span class="s2">"unset"</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Let’s also add outputs to the stack so we can see what the variables are set to:</p>
+
+<div class="language-terraform highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1"># modules/stacks/app/test-stack/outputs.tf</span>
+<span class="k">output</span> <span class="s2">"pet"</span> <span class="p">{</span>
+  <span class="nx">value</span> <span class="p">=</span> <span class="nx">random_pet</span><span class="p">.</span><span class="nx">pet</span><span class="p">.</span><span class="nx">id</span>
+<span class="p">}</span>
+
+<span class="k">output</span> <span class="s2">"global_var"</span> <span class="p">{</span>
+  <span class="nx">value</span> <span class="p">=</span> <span class="kd">var</span><span class="p">.</span><span class="nx">global_var</span>
+<span class="p">}</span>
+
+<span class="k">output</span> <span class="s2">"tier_var"</span> <span class="p">{</span>
+  <span class="nx">value</span> <span class="p">=</span> <span class="kd">var</span><span class="p">.</span><span class="nx">tier_var</span>
+<span class="p">}</span>
+
+<span class="k">output</span> <span class="s2">"env_var"</span> <span class="p">{</span>
+  <span class="nx">value</span> <span class="p">=</span> <span class="kd">var</span><span class="p">.</span><span class="nx">env_var</span>
+<span class="p">}</span>
+
+<span class="k">output</span> <span class="s2">"layer_var"</span> <span class="p">{</span>
+  <span class="nx">value</span> <span class="p">=</span> <span class="kd">var</span><span class="p">.</span><span class="nx">layer_var</span>
+<span class="p">}</span>
+
+<span class="k">output</span> <span class="s2">"stack_var"</span> <span class="p">{</span>
+  <span class="nx">value</span> <span class="p">=</span> <span class="kd">var</span><span class="p">.</span><span class="nx">stack_var</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Next, we’ll cover implementing the variable hierarchy in two ways. The first works for terraform pre-0.12. The second slightly modifies our first approach to work for 0.12+.</p>
+
+<h1 id="variables-via-tfvars-pre-012">Variables via tfvars (pre-0.12)</h1>
+
+<p><a href="https://www.terraform.io/docs/configuration/variables.html#variable-definitions-tfvars-files">tfvars files</a> are a standard way of defining variable values for terraform. Terragrunt allows you to define <code class="language-plaintext highlighter-rouge">required_var_files</code> and <code class="language-plaintext highlighter-rouge">optional_var_files</code> within the <a href="https://terragrunt.gruntwork.io/docs/reference/config-blocks-and-attributes/#terraform">terraform block</a> of your <code class="language-plaintext highlighter-rouge">terragrunt.hcl</code>, as covered by this <a href="https://blog.gruntwork.io/terragrunt-how-to-keep-your-terraform-code-dry-and-maintainable-f61ae06959d8#d7f6">Gruntwork post</a>. Terragrunt then passes these files to terraform using its <a href="https://www.terraform.io/docs/commands/plan.html#var-file-foo">-var-file</a> option. Terraform loads the files and sets the variable values, with later files overriding previous files.</p>
+
+<p>We can use this to implement a tfvars hierarchy. The first step is defining a tfvars file in each level of our deployments directory structure:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>deployments/
+    app/
+        dev/
+            test-stack/
+                terraform.tfvars
+                terragrunt.hcl
+        stage/
+            test-stack/
+                terraform.tfvars
+                terragrunt.hcl
+        prod/
+            test-stack/
+                terraform.tfvars
+                terragrunt.hcl
+            terraform.tfvars
+        terraform.tfvars
+    terraform.tfvars
+    root.hcl
+</code></pre></div></div>
+
+<p>Next, define values at each level:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># deployments/terraform.tfvars
+global_var = "set in deployments/"
+</code></pre></div></div>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># deployments/app/terraform.tfvars
+tier_var = "set in deployments/app/"
+</code></pre></div></div>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># deployments/app/dev/terraform.tfvars
+env_var = "set in deployments/app/dev"
+</code></pre></div></div>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># deployments/app/dev/test-stack/terraform.tfvars
+stack_var = "set in deployments/app/dev/test-stack/"
+</code></pre></div></div>
+
+<p>and so on for <code class="language-plaintext highlighter-rouge">deployments/app/test/**</code> and <code class="language-plaintext highlighter-rouge">deployments/app/prod/**</code>.</p>
+
+<p>Next, we modify our <code class="language-plaintext highlighter-rouge">root.hcl</code> file to load all the tfvars files. We make use of the <code class="language-plaintext highlighter-rouge">deployment_path_components</code> local we defined in <a href="/2021/01/17/part-1-organizing-terragrunt.html">part 1</a> to generate a list of all possible tfvar locations:</p>
+
+<pre><code class="language-HCL"># root.hcl
+locals {
+  relative_deployment_path   = path_relative_to_include()
+  deployment_path_components = compact(
+    split("/", local.relative_deployment_path)
+  )
+
+  ...
+
+  # Get a list of every possible tfvars path between root_deployments_directory
+  # and the path of the deployment
+  possible_config_locations = [
+    for i in range(0, length(local.deployment_path_components) + 1) :
+      join("/", concat(
+        [local.root_deployments_dir],
+        slice(local.deployment_path_components, 0, i),
+        ["terraform.tfvars"]
+      ))
+  ]
+}
+</code></pre>
+
+<p>Finally, instruct terragrunt to pass the <code class="language-plaintext highlighter-rouge">possible_config_locations</code> as <code class="language-plaintext highlighter-rouge">optional_var_files</code> to terraform under an <code class="language-plaintext highlighter-rouge">extra_arguments</code> block:</p>
+
+<pre><code class="language-HCL"># root.hcl
+...
+
+terraform {
+  ...
+  extra_arguments "load_config_files" {
+    commands = get_terraform_commands_that_need_vars()
+    optional_var_files = local.possible_config_locations
+  }
+}
+</code></pre>
+
+<p>Having done this, we can run plan and apply and see the variables are loaded. For instance, running <code class="language-plaintext highlighter-rouge">terragrunt apply</code> from <code class="language-plaintext highlighter-rouge">deployments/app/dev/test-stack</code> produces:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Apply complete! Resources: 0 added, 0 changed, 0 destroyed.
+
+Outputs:
+
+env_var = set in deployments/app/dev
+global_var = overridden in deployments/app
+layer_var = unset
+stack_var = set in deployments/app/dev/test-stack/
+tier_var = set in deployments/app/
+</code></pre></div></div>
+
+<p>We can also override values in lower levels. For instance, changing the value of <code class="language-plaintext highlighter-rouge">global_var</code> in <code class="language-plaintext highlighter-rouge">deployments/app/terraform.tfvars</code>:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># deployments/app/terraform.tfvars
+global_var = "overridden in deployments/app"
+tier_var   = "set in deployments/app/"
+</code></pre></div></div>
+
+<p>and running <code class="language-plaintext highlighter-rouge">terragrunt output global_var</code> in <code class="language-plaintext highlighter-rouge">deployments/app/terraform.tfvars</code> produces:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>overridden in deployments/app
+</code></pre></div></div>
+
+<h1 id="where-tfvars-fail">Where tfvars fail</h1>
+
+<p>The above worked well until terraform 0.12, which introduced a <a href="https://github.com/hashicorp/terraform/issues/22004">controversial feature</a> to print warnings when values are specified for undefined variables. For instance, if we add an unused variable to <code class="language-plaintext highlighter-rouge">deployments/terraform.tfvars</code>:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># deployments/terraform.tfvars
+global_var = "set-in-deployments/"
+unused     = true
+</code></pre></div></div>
+
+<p>any stack we <code class="language-plaintext highlighter-rouge">plan</code> or <code class="language-plaintext highlighter-rouge">apply</code> now prints:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Warning: Value for undeclared variable
+
+The root module does not declare a variable named "unused"
+but a value was found in file
+"/Users/td/code/td/terraform-skeleton/deployments/terraform.tfvars".
+To use this value, add a "variable" block to the configuration.
+</code></pre></div></div>
+
+<p>The warnings are annoying enough in that they clutter the plan output, but worse still the warning states:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Using a variables file to set an undeclared variable is deprecated and will
+become an error in a future release.
+</code></pre></div></div>
+
+<p>That means we can’t reliably use tfvar files as our source of a variable hierarchy for the long term, at least if you have any variables defined in tfvars that are loaded and go unused by any stacks.</p>
+
+<p>You might wonder if this is actually a problem. <a href="https://github.com/hashicorp/terraform/blob/v0.12/CHANGELOG.md#incompatibilities-and-notes">Hashicorp states</a> the change was made “to give better feedback about mistakes”, so maybe we should just avoid having variables defined in tfvars files that are loaded by stacks that do not use them.</p>
+
+<p>Allow me to present an example where unused variables are helpful.</p>
+
+<h2 id="unused-variables-a-use-case">Unused variables: a use case</h2>
+
+<p>My team has several global flags for our infrastructure. An example is one used to conditionally enable or disable access to our system for a third-party team. Any stack that must make changes to facilitate that access defines an <code class="language-plaintext highlighter-rouge">enable_third_party_access</code> variable in its <code class="language-plaintext highlighter-rouge">variables.tf</code> file. If true, that stack makes the necessary changes.</p>
+
+<p>Multiple stacks defining this variable poses a challenge. When third-party access is requested, we don’t want to have to find every deployment of every stack with this variable and set its value to <code class="language-plaintext highlighter-rouge">true</code>. We want to define the <code class="language-plaintext highlighter-rouge">enable_third_party_access</code> once, either across all environments or for specific environments, so we don’t forget to enable or disable individual flags. Furthermore, not every stack needs to enable third-party access, and therefore not every stack needs this variable.</p>
+
+<p>Leveraging unused variables means we can set the <code class="language-plaintext highlighter-rouge">enable_third_party_access</code> value in fewer places, leading to fewer mistakes.</p>
+
+<p>There are plenty more examples of how unused variables are useful in the <a href="https://github.com/hashicorp/terraform/issues/22004">Hashicorp issue discussion</a>. So how do we support unused variables in 0.12 and beyond?</p>
+
+<h1 id="variables-via-yaml-012">Variables via YAML (0.12+)</h1>
+
+<p>Fortunately, Hashicorp does give you a workaround for defining values for unused variables, also displayed in the warning messages they print:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>If you wish to provide certain "global" settings to all configurations in
+your organization, use TF_VAR_... environment variables to set these instead.
+</code></pre></div></div>
+
+<p>So instead of using tfvar files, we need to define environment variables. But how can we do that easily and  reproducibly across systems? Terragrunt again comes to the rescue.</p>
+
+<p>We can pass an HCL map to an <a href="https://terragrunt.gruntwork.io/docs/features/inputs/">inputs</a> attribute in our <code class="language-plaintext highlighter-rouge">root.hcl</code>, which terragrunt converts to TF_VAR environment variables passed to terraform. Now we just need a map of our variables and their values. There’s no easy way to generate such a map from tfvars files, but terragrunt <a href="https://terragrunt.gruntwork.io/docs/reference/built-in-functions/#terraform-built-in-functions">provides access</a> to all of <a href="https://www.terraform.io/docs/configuration/functions.html">terraform’s functions</a> in the HCL file. This gives us the building blocks we need to use YAML files instead of tfvars to build our variable hierarchy. Specifically, we’ll use:</p>
+
+<ul>
+  <li><a href="https://www.terraform.io/docs/configuration/functions/fileexists.html">fileexists</a> - for checking if a file exists before attempting to load it</li>
+  <li><a href="https://www.terraform.io/docs/configuration/functions/file.html">file</a> - for loading file contents to a string</li>
+  <li><a href="https://www.terraform.io/docs/configuration/functions/yamldecode.html">yamldecode</a> - for converting a YAML string to an HCL map</li>
+  <li><a href="https://www.terraform.io/docs/configuration/functions/merge.html">merge</a> - for merging multiple HCL maps</li>
+</ul>
+
+<p>Start by converting the <code class="language-plaintext highlighter-rouge">terraform.tfvars</code> files to <code class="language-plaintext highlighter-rouge">config.yml</code> files<sup id="fnref:1" role="doc-noteref"><a href="#fn:1" class="footnote">1</a></sup>. For instance, convert:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># deployments/terraform.tfvars
+global_var = "set-in-deployments/"
+unused     = true
+</code></pre></div></div>
+
+<p>to:</p>
+
+<pre><code class="language-YAML"># deployments/config.yml
+---
+global_var: "set-in-deployments/"
+unused: true
+</code></pre>
+
+<p>Next, modify <code class="language-plaintext highlighter-rouge">root.hcl</code> to load the YAML files, first by removing the <code class="language-plaintext highlighter-rouge">extra_arguments</code> block we used for loading the tfvars:</p>
+
+<pre><code class="language-HCL"># root.hcl
+...
+terraform {
+  source = "${local.root_deployments_dir}/../modules/stacks/${local.tier}/${local.stack}"
+  # no extra_arguments block here
+}
+</code></pre>
+
+<p>then by changing the locals to load the YAML files and pass them into the terragrunt inputs:</p>
+
+<pre><code class="language-HCL"># root.hcl
+locals {
+  ...
+
+  # Get a list of every path between root_deployments_directory and the path of
+  # the deployment
+  possible_config_dirs = [
+    for i in range(0, length(local.deployment_path_components) + 1) :
+      join("/", concat(
+        [local.root_deployments_dir],
+        slice(local.deployment_path_components, 0, i)
+      ))
+  ]
+
+  # Generate a list of possible config files at every possible_config_dir
+  # (support both .yml and .yaml)
+  possible_config_paths = flatten([
+    for dir in local.possible_config_dirs : [
+      "${dir}/config.yml",
+      "${dir}/config.yaml"
+    ]
+  ])
+
+  # Load every YAML config file that exists into an HCL map
+  file_configs = [
+    for path in local.possible_config_paths :
+      yamldecode(file(path)) if fileexists(path)
+  ]
+
+  # Merge the maps together, with deeper configs overriding higher configs
+  merged_config = merge(local.file_configs...)
+}
+
+# Pass the merged config to terraform as variable values using TF_VAR_
+# environment variables
+inputs = local.merged_config
+
+...
+</code></pre>
+
+<p>And that’s it. We have a YAML-based variable hierarchy that supports overriding and unused variables. The final result is available on <a href="https://github.com/thirstydeveloper/terraform-terragrunt-skeleton/tree/release/1.1">GitHub</a></p>
+
+<h1 id="whats-next">What’s next?</h1>
+
+<p>So far, the skeleton has been using the default <a href="https://www.terraform.io/docs/backends/types/local.html">local backend</a> for state storage. For this project to work in a team setting with multiple developers and/or CI/CD performing terraform commands, we will need to store terraform state remotely with locking to avoid concurrent executions from stepping on each other. Setting up remote state storage will be the subject of the next post.</p>
+
+<h1 id="footnotes">Footnotes</h1>
+
+<div class="footnotes" role="doc-endnotes">
+  <ol>
+    <li id="fn:1" role="doc-endnote">
+
+      <p>The YAML loading doesn’t play nice with config.yml files that are empty or contain just a <code class="language-plaintext highlighter-rouge">---</code> start of document marker. You can delete the empty <code class="language-plaintext highlighter-rouge">config.yml</code> file and everything will work, due to the <code class="language-plaintext highlighter-rouge">fileexists</code> check. If you prefer to keep the empty config.yml, the most minimal contents required are:</p>
+
+      <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>---
+{}
+</code></pre></div>      </div>
+      <p><a href="#fnref:1" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div><div id="disqus_thread"></div>
+  <script>
+    var disqus_config = function () {
+      this.page.url = 'https://thirstydeveloper.io/tf-skeleton/2021/01/23/part-2-variables.html';
+      this.page.identifier = 'https://thirstydeveloper.io/tf-skeleton/2021/01/23/part-2-variables.html';
+    };
+
+    (function() {
+      var d = document, s = d.createElement('script');
+
+      s.src = 'https://thirstydeveloper.disqus.com/embed.js';
+
+      s.setAttribute('data-timestamp', +new Date());
+      (d.head || d.body).appendChild(s);
+    })();
+  </script>
+  <noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript" rel="nofollow">comments powered by Disqus.</a></noscript><a class="u-url" href="/tf-skeleton/2021/01/23/part-2-variables.html" hidden></a>
+</article>
+
+      </div>
+    </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">thirstydeveloper</h2>
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li class="p-name">Chris Kent</li><li><a class="u-email" href="mailto:thirstydeveloper@gmail.com">thirstydeveloper@gmail.com</a></li></ul>
+      </div>
+
+      <div class="footer-col footer-col-2"><ul class="social-media-list"><li><a href="https://github.com/thirstydeveloper"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#github"></use></svg> <span class="username">thirstydeveloper</span></a></li><li><a href="https://www.linkedin.com/in/thirstydeveloper"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#linkedin"></use></svg> <span class="username">thirstydeveloper</span></a></li><li><a href="https://www.twitter.com/thirstydev"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#twitter"></use></svg> <span class="username">thirstydev</span></a></li><li><a href="/feed.xml"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#rss"></use></svg> <span>rss</span></a></li></ul>
+</div>
+
+      <div class="footer-col footer-col-3">
+        <p>&copy; 2021 Chris Kent. All Rights Reserved. </p>
+      </div>
+    </div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>
