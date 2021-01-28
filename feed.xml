@@ -1,4 +1,250 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.9.0">Jekyll</generator><link href="https://thirstydeveloper.io/feed.xml" rel="self" type="application/atom+xml" /><link href="https://thirstydeveloper.io/" rel="alternate" type="text/html" /><updated>2021-01-26T23:49:04+00:00</updated><id>https://thirstydeveloper.io/feed.xml</id><title type="html">thirstydeveloper</title><subtitle>Infrastructure-as-Code-as-a-Team</subtitle><author><name>Chris Kent</name></author><entry><title type="html">Terraform Skeleton Part 2: Variables</title><link href="https://thirstydeveloper.io/tf-skeleton/2021/01/23/part-2-variables.html" rel="alternate" type="text/html" title="Terraform Skeleton Part 2: Variables" /><published>2021-01-23T10:53:09+00:00</published><updated>2021-01-23T10:53:09+00:00</updated><id>https://thirstydeveloper.io/tf-skeleton/2021/01/23/part-2-variables</id><content type="html" xml:base="https://thirstydeveloper.io/tf-skeleton/2021/01/23/part-2-variables.html">&lt;p&gt;In &lt;a href=&quot;/2021/01/17/part-1-organizing-terragrunt.html&quot;&gt;part 1&lt;/a&gt; of the &lt;a href=&quot;/series/tf-skeleton.html&quot;&gt;terraform skeleton series&lt;/a&gt;, we set up a &lt;a href=&quot;https://github.com/thirstydeveloper/terraform-terragrunt-skeleton/tree/release/1.0&quot;&gt;terraform repository&lt;/a&gt; that allows the team to apply infrastructure at any level: from individual stacks to entire environments. We build on that foundation in this post, adding a variable hierarchy that similarly allows definition and overriding of variables at each level of the infrastructure.&lt;/p&gt;
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.9.0">Jekyll</generator><link href="https://thirstydeveloper.io/feed.xml" rel="self" type="application/atom+xml" /><link href="https://thirstydeveloper.io/" rel="alternate" type="text/html" /><updated>2021-01-28T11:37:52+00:00</updated><id>https://thirstydeveloper.io/feed.xml</id><title type="html">thirstydeveloper</title><subtitle>Infrastructure-as-Code-as-a-Team</subtitle><author><name>Chris Kent</name></author><entry><title type="html">Terraform Skeleton Part 3: AWS Backend</title><link href="https://thirstydeveloper.io/tf-skeleton/2021/01/28/part-3-aws-backend.html" rel="alternate" type="text/html" title="Terraform Skeleton Part 3: AWS Backend" /><published>2021-01-28T11:00:00+00:00</published><updated>2021-01-28T11:00:00+00:00</updated><id>https://thirstydeveloper.io/tf-skeleton/2021/01/28/part-3-aws-backend</id><content type="html" xml:base="https://thirstydeveloper.io/tf-skeleton/2021/01/28/part-3-aws-backend.html">&lt;p&gt;Terraform uses &lt;a href=&quot;https://www.terraform.io/docs/state/index.html&quot;&gt;state&lt;/a&gt; files to track the resources it creates back to resource definitions in your &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;*.tf&lt;/code&gt; files. Each deployment has its own state. State is stored according to the &lt;a href=&quot;https://www.terraform.io/docs/configuration/blocks/backends/index.html&quot;&gt;backend&lt;/a&gt; configured for the deployment. Terraform uses a &lt;a href=&quot;https://www.terraform.io/docs/backends/types/local.html&quot;&gt;local backend&lt;/a&gt; for storing state on the local filesystem by default, which is what we’ve been using for &lt;a href=&quot;/2021/01/17/part-1-organizing-terragrunt.html&quot;&gt;part 1&lt;/a&gt; and &lt;a href=&quot;/tf-skeleton/2021/01/23/part-2-variables.html&quot;&gt;part 2&lt;/a&gt; of the &lt;a href=&quot;/series/tf-skeleton.html&quot;&gt;terraform skeleton series&lt;/a&gt;.&lt;sup id=&quot;fnref:1&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:1&quot; class=&quot;footnote&quot;&gt;1&lt;/a&gt;&lt;/sup&gt; This works fine for a simple demonstration but is insufficient for production use because:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;You can only run terraform commands on your deployments from that one machine&lt;/li&gt;
+  &lt;li&gt;There are no built-in backups on your state files; if they’re lost, you’re going to have a bad day&lt;/li&gt;
+  &lt;li&gt;There’s no built-in versioning of your state files, which can be handy for recovering from more advanced terraform operations gone wrong&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;While you can commit the state files into your git repository for achieving distribution across team members, backups, and versioning, that isn’t a good idea because:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;State files can include sensitive information you might not want in version control&lt;/li&gt;
+  &lt;li&gt;If multiple team members make changes affecting the same state file, you’ll wind up with a mess of multiple incomplete state files needing to be merged&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;&lt;a href=&quot;https://www.terraform.io/docs/state/remote.html&quot;&gt;Remote state&lt;/a&gt; storage is built in to terraform and solves these problems, making it easy for teams to collaborate on the same deployments. Terragrunt provides further enhancements that make working with remote state even easier. Today, we’ll add remote state to the skeleton using terragrunt, &lt;a href=&quot;https://aws.amazon.com/s3/&quot;&gt;S3&lt;/a&gt;, and &lt;a href=&quot;https://aws.amazon.com/dynamodb/&quot;&gt;DynamoDB&lt;/a&gt;. This will give us a simple foundation to build on.&lt;/p&gt;
+
+&lt;h1 id=&quot;goals&quot;&gt;Goals&lt;/h1&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Our skeleton stores state remotely such that multiple teammates can run terraform commands&lt;/li&gt;
+  &lt;li&gt;State files are stored in a directory structure matching our deployments&lt;/li&gt;
+  &lt;li&gt;Locks are in place around state manipulation to avoid corruption due to concurrent terraform command executions&lt;/li&gt;
+  &lt;li&gt;State is stored securely, with encryption, versioning, and logging enabled&lt;/li&gt;
+  &lt;li&gt;Remote state configuration is DRY - defined once and reused across deployments&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;If you prefer to jump to the end, the code implementing the final result is available on &lt;a href=&quot;https://github.com/thirstydeveloper/terraform-terragrunt-skeleton/tree/release/1.2&quot;&gt;GitHub&lt;/a&gt;.&lt;/p&gt;
+
+&lt;h1 id=&quot;setup&quot;&gt;Setup&lt;/h1&gt;
+
+&lt;p&gt;You will need:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;An AWS account&lt;/li&gt;
+  &lt;li&gt;Credentials for that account configured in the terminal used for running &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terraform&lt;/code&gt; and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terragrunt&lt;/code&gt; commands&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h1 id=&quot;the-s3-backend&quot;&gt;The S3 Backend&lt;/h1&gt;
+
+&lt;p&gt;Remote state can be accomplished in many different ways with terraform. The teams I support tend to have an Amazon Web Services footprint already, and therefore I typically use terraform’s &lt;a href=&quot;https://www.terraform.io/docs/backends/types/s3.html&quot;&gt;S3 backend&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;The S3 backend stores your state files in S3 and retrieves them for stateful terraform commands. This meets the distribution, versioning, and encryption requirements we require. To avoid corruption from concurrent terraform commands, the S3 backend uses a DynamoDB table to manage lock files. Stateful terraform commands first obtain a lock from the DynamoDB table, effectively single-threading commands operating on the same state file.&lt;/p&gt;
+
+&lt;p&gt;We’ll focus on using the S3 backend today.&lt;/p&gt;
+
+&lt;h1 id=&quot;backend-configuration-with-terraform&quot;&gt;Backend Configuration with Terraform&lt;/h1&gt;
+
+&lt;p&gt;Terraform backends are configured using a block in the stack’s &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;*.tf&lt;/code&gt; files:&lt;/p&gt;
+
+&lt;pre&gt;&lt;code class=&quot;language-HCL&quot;&gt;terraform {
+  backend &quot;s3&quot; {
+    bucket = &quot;terraform-skeleton-state&quot;
+    key    = &quot;something/unique/to/the/stack&quot;
+    region = &quot;us-east-1&quot;
+  }
+}
+&lt;/code&gt;&lt;/pre&gt;
+
+&lt;p&gt;This inline configuration is less than ideal. First, you have to configure the backend for every stack definition (i.e., in every directory under our &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;modules/stacks&lt;/code&gt;), leading to a lot of duplication. Second, you cannot use interpolation in the backend block to configure it using variables, locals, or data source attributes. A lack of interpolation can be problematic if you want to use different buckets for different environments for example, since we have multiple deployments (e.g., &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;deployments/app/dev/test-stack&lt;/code&gt;, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;deployments/app/test/test-stack&lt;/code&gt;) sharing the same &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;modules/stack/app/test-stack&lt;/code&gt; files.&lt;/p&gt;
+
+&lt;p&gt;Terraform provides several ways to work around these limitations through &lt;a href=&quot;https://www.terraform.io/docs/configuration/backend.html#partial-configuration&quot;&gt;partial configuration&lt;/a&gt;. This allows you to omit properties from the backend block and instead provide them through an out-of-band mechanism such as a configuration file, a command-line option, or interactively on the command-line. With partial configuration, you could, for example, omit the bucket property in the configuration above, and instead pass it through one of the mentioned mechanisms to achieve different buckets for different environments.&lt;/p&gt;
+
+&lt;p&gt;Partial configuration, although a step in the right direction, still requires you to figure out how you’re going to manage the backend configuration properties. If using configuration files, where will those be stored and distributed to the team? How will you ensure every terraform command receives the necessary command-line properties with the correct values? This more or less forces you to use a build tool for your terraform commands (e.g., a makefile) to achieve consistency/reproducibility. While a build tool isn’t necessarily a bad thing, it strikes me as unusual to require it for remote state, a seemingly basic and fundamental capability.&lt;/p&gt;
+
+&lt;p&gt;Fortunately, terragrunt gives us a way to make remote state usage easy for anyone on the team.&lt;/p&gt;
+
+&lt;h1 id=&quot;backend-configuration-with-terragrunt&quot;&gt;Backend Configuration with Terragrunt&lt;/h1&gt;
+
+&lt;p&gt;With terragrunt, you can configure your backend within a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terragrunt.hcl&lt;/code&gt;, or in our case &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;root.hcl&lt;/code&gt;. Terragrunt then generates the necessary terraform backend configuration based on what you specify. Configuring remote state inside &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;root.hcl&lt;/code&gt; means every deployment will receive the backend configuration by way of terragrunt’s include mechanism. This removes all duplication of remote state configuration from the stacks.&lt;/p&gt;
+
+&lt;p&gt;Additionally, the remote state block supports interpolation, allowing each deployment to share common parts of the remote state configuration while having other parts be unique. For instance, every deployment can share the same bucket for their state files but use a different prefix within that bucket.&lt;/p&gt;
+
+&lt;p&gt;Using terragrunt’s remote state configuration is &lt;a href=&quot;https://terragrunt.gruntwork.io/docs/features/keep-your-remote-state-configuration-dry/&quot;&gt;well documented by Gruntwork&lt;/a&gt;. Here’s how we can add it to our skeleton.&lt;/p&gt;
+
+&lt;h2 id=&quot;implementation&quot;&gt;Implementation&lt;/h2&gt;
+
+&lt;p&gt;Add a &lt;a href=&quot;https://terragrunt.gruntwork.io/docs/reference/config-blocks-and-attributes/#remote_state&quot;&gt;remote_state&lt;/a&gt; block to our &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;root.hcl&lt;/code&gt; to generate an s3 backend configuration:&lt;/p&gt;
+
+&lt;div class=&quot;language-diff highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;gd&quot;&gt;--- a/deployments/root.hcl
+&lt;/span&gt;&lt;span class=&quot;gi&quot;&gt;+++ b/deployments/root.hcl
+&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;@@ -39,6 +40,24 @@&lt;/span&gt; locals {
+ # environment variables
+ inputs = local.merged_config
+
++remote_state {
+&lt;span class=&quot;gi&quot;&gt;+  backend = &quot;s3&quot;
++  generate = {
++    path      = &quot;backend.tf&quot;
++    if_exists = &quot;overwrite&quot;
++  }
++  config = {
++    bucket  = &quot;terraform-skeleton-state&quot;
++    region  = &quot;us-east-1&quot;
++    encrypt = true
++
++    key = &quot;${dirname(local.relative_deployment_path)}/${local.stack}.tfstate&quot;
++
++    dynamodb_table            = &quot;terraform-skeleton-state-locks&quot;
++    accesslogging_bucket_name = &quot;terraform-skeleton-state-logs&quot;
++  }
++}
++
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This approach uses:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;A single bucket, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terraform-skeleton-state&lt;/code&gt;, for all deployment state files&lt;/li&gt;
+  &lt;li&gt;A key/prefix unique to each deployment based on the relative path from the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;root.hcl&lt;/code&gt; file&lt;/li&gt;
+  &lt;li&gt;A corresponding DynamoDB lock table, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terraform-skeleton-state-locks&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;A logging bucket, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terraform-skeleton-state-logs&lt;/code&gt;, for logging all S3 access requests to out state bucket&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;how-this-works&quot;&gt;How This Works&lt;/h2&gt;
+
+&lt;p&gt;Terragrunt executes terraform commands from a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;.terragrunt-cache&lt;/code&gt; directory. Before executing terraform, terragrunt populates the cache with:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Any files in the current deployment directory (location of your &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terragrunt.hcl&lt;/code&gt; file)&lt;/li&gt;
+  &lt;li&gt;The stack files in the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terraform.source&lt;/code&gt; directory specified in our &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;root.hcl&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;Files from &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;generate&lt;/code&gt; blocks defined in the HCL files&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;The last step above is what translates the generate block defined in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;root.hcl&lt;/code&gt; to a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;backend.tf&lt;/code&gt; file for each stack containing the appropriate terraform backend configuration.&lt;sup id=&quot;fnref:2&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:2&quot; class=&quot;footnote&quot;&gt;2&lt;/a&gt;&lt;/sup&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;buckettable-initialization&quot;&gt;Bucket/Table Initialization&lt;/h2&gt;
+
+&lt;p&gt;By using the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;remote_state&lt;/code&gt; block in our HCL files, we allow terragrunt to manage the creation of the S3 bucket and DynamoDB table for us.&lt;/p&gt;
+
+&lt;p&gt;Terragrunt will:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Automatically create both buckets and/or lock table for you if it does not exist&lt;/li&gt;
+  &lt;li&gt;Configure the state bucket (but not the logs bucket) with
+    &lt;ul&gt;
+      &lt;li&gt;Versioning and encryption enabled&lt;/li&gt;
+      &lt;li&gt;Public access disabled&lt;/li&gt;
+      &lt;li&gt;Enforcing TLS-only access&lt;/li&gt;
+    &lt;/ul&gt;
+  &lt;/li&gt;
+  &lt;li&gt;Enable encryption on the lock table&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;activating-remote-state&quot;&gt;Activating Remote State&lt;/h2&gt;
+
+&lt;p&gt;Switching from local state to remote state requires running &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terragrunt init&lt;/code&gt; on each deployment.&lt;/p&gt;
+
+&lt;p&gt;The first init will prompt you to create the buckets and/or dynamo table if they don’t exist:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;Initializing remote state for the s3 backend
+Remote state S3 bucket terraform-skeleton-state does not
+exist or you don't have permissions to access it.
+Would you like Terragrunt to create it? (y/n)
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Every init will then prompt you to copy your existing local state to the new remote backend:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;[terragrunt] 2020/12/13 10:04:56 Initializing remote state for the s3 backend
+[terragrunt] 2020/12/13 10:04:57 Running command: terraform init
+
+Initializing the backend...
+Do you want to copy existing state to the new backend?
+  Pre-existing state was found while migrating the previous &quot;local&quot; backend to the
+  newly configured &quot;s3&quot; backend. No existing state was found in the newly
+  configured &quot;s3&quot; backend. Do you want to copy this state to the new &quot;s3&quot;
+  backend? Enter &quot;yes&quot; to copy and &quot;no&quot; to start with an empty state.
+
+  Enter a value:
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Finally, although this shouldn’t be necessary, I’ve had to &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;rm -rf&lt;/code&gt; the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;.terragrunt-cache&lt;/code&gt; directory inside each deployment for terragrunt commands to work after the migration.&lt;/p&gt;
+
+&lt;p&gt;After activating remote state for all deployments, we can list our state bucket and see the state files nicely organized:&lt;/p&gt;
+
+&lt;div class=&quot;language-shell highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;➜ aws s3 &lt;span class=&quot;nb&quot;&gt;ls&lt;/span&gt; &lt;span class=&quot;nt&quot;&gt;--recursive&lt;/span&gt; terraform-skeleton-state
+2020-12-12 07:38:39       1154 app/dev/test-stack.tfstate
+2020-12-13 10:22:49       1148 app/prod/test-stack.tfstate
+2020-12-13 10:22:34       1154 app/stage/test-stack.tfstate
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h2 id=&quot;limitations&quot;&gt;Limitations&lt;/h2&gt;
+
+&lt;p&gt;Using terragrunt’s &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;remote_state&lt;/code&gt; block has several advantages:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;It’s easy&lt;/li&gt;
+  &lt;li&gt;It includes sensible security defaults for the state bucket and lock table&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;While it is good enough for today’s skeleton, there are some limitations of the terragrunt approach worth covering:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Terragrunt lacks security defaults on the log bucket&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;If terragrunt creates the log bucket, it will not have encryption enabled and it will not have public access explicitly blocked. For this reason, you should strongly consider self-management of the log bucket. I tend to do this with a CloudFormation stack.&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Sometimes you don’t want auto-creation of the state bucket and lock table&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;Once I start distributing ownership of pieces of infrastructure to different teams, I want to control where state files are stored as much as possible, which means avoiding a situation where a team accidentally creates a new state bucket or lock table. Consistent state file storage makes it easier to audit infrastructure for compliance with team and organization standards using tools like &lt;a href=&quot;https://terraform-compliance.com/&quot;&gt;terraform-compliance&lt;/a&gt;. Easier auditing in turn makes it more palatable to push down infrastructure ownership responsibilities.&lt;/p&gt;
+
+&lt;p&gt;For a single team owning all infrastructure, however, auto-creation is likely safe enough.&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Terragrunt doesn’t offer full control over the credentials used to access the terraform state&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;The &lt;a href=&quot;https://terragrunt.gruntwork.io/docs/reference/config-blocks-and-attributes/#remote_state&quot;&gt;remote_state&lt;/a&gt; block has a few fields for specifying a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;role_arn&lt;/code&gt; or AWS &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;profile&lt;/code&gt; to use for remote state access, but you can’t control things like &lt;a href=&quot;https://docs.aws.amazon.com/IAM/latest/UserGuide/id_session-tags.html&quot;&gt;IAM session tags&lt;/a&gt;, transitive tag usage, or assume role policies.&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Terragrunt doesn’t offer full control over all fields on the buckets and table&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;While terragrunt applies sensible security defaults, you can’t control everything using its &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;remote_state&lt;/code&gt; block. For example, you’ll need to self-manage if you need to specify specific KMS keys for encryption of the bucket or table. Similarly, if you want to set up replication of your terraform state bucket, self-management is the way to go.&lt;/p&gt;
+
+&lt;h1 id=&quot;whats-next&quot;&gt;What’s next?&lt;/h1&gt;
+
+&lt;p&gt;The skeleton now supports multiple developers working on the infrastructure as a team, sharing a state file stored in S3 with contention resolved through a DynamoDB lock table. State is encrypted and versioned, and access to it is logged. Remote state is configured once, in the root.hcl, and reused across our stacks.&lt;/p&gt;
+
+&lt;p&gt;Thus far, terragrunt has been running with whatever AWS credentials were configured in the shell at the time of execution.&lt;/p&gt;
+
+&lt;p&gt;This isn’t ideal in a team setting because:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;It could lead to “works on my machine problems” if developers have different configurations&lt;/li&gt;
+  &lt;li&gt;It encourages running terraform with administrative-level permissions all the time for all developers working with it&lt;/li&gt;
+  &lt;li&gt;Terraform state is sensitive and should be protected from modification except by a well-defined set of roles&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;The next entry in the &lt;a href=&quot;/series/tf-skeleton.html&quot;&gt;terraform skeleton series&lt;/a&gt; will take a first step towards addressing these issues.&lt;/p&gt;
+
+&lt;h1 id=&quot;footnotes&quot;&gt;Footnotes&lt;/h1&gt;
+
+&lt;div class=&quot;footnotes&quot; role=&quot;doc-endnotes&quot;&gt;
+  &lt;ol&gt;
+    &lt;li id=&quot;fn:1&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;Terragrunt stores local state in a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terraform.tfstate&lt;/code&gt; file located underneath the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;.terragrunt-cache&lt;/code&gt; directory it creates within our deployment directory. &lt;a href=&quot;#fnref:1&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:2&quot; role=&quot;doc-endnote&quot;&gt;
+
+      &lt;p&gt;The terragrunt remote state approach we cover here uses the newer &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;generate&lt;/code&gt; option, which was &lt;a href=&quot;https://github.com/gruntwork-io/terragrunt/pull/1050&quot;&gt;added&lt;/a&gt; in terragrunt &lt;a href=&quot;https://github.com/gruntwork-io/terragrunt/releases/tag/v0.22.0&quot;&gt;v0.22.0&lt;/a&gt;. Before that version, terragrunt wouldn’t generate a backend.tf file but would instead pass CLI arguments to the terraform command, making use of terraform’s partial configuration implementation. The generate approach has several advantages over the old method. The most notable is that previously, you had to include an empty backend configuration block in every stack, whereas with the generate approach you do not. &lt;a href=&quot;#fnref:2&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+  &lt;/ol&gt;
+&lt;/div&gt;</content><author><name>Chris</name></author><category term="tf-skeleton" /><category term="terraform" /><category term="terragrunt" /><summary type="html">Terraform uses state files to track the resources it creates back to resource definitions in your *.tf files. Each deployment has its own state. State is stored according to the backend configured for the deployment. Terraform uses a local backend for storing state on the local filesystem by default, which is what we’ve been using for part 1 and part 2 of the terraform skeleton series.1 This works fine for a simple demonstration but is insufficient for production use because: Terragrunt stores local state in a terraform.tfstate file located underneath the .terragrunt-cache directory it creates within our deployment directory. &amp;#8617;</summary></entry><entry><title type="html">Terraform Skeleton Part 2: Variables</title><link href="https://thirstydeveloper.io/tf-skeleton/2021/01/23/part-2-variables.html" rel="alternate" type="text/html" title="Terraform Skeleton Part 2: Variables" /><published>2021-01-23T10:53:09+00:00</published><updated>2021-01-23T10:53:09+00:00</updated><id>https://thirstydeveloper.io/tf-skeleton/2021/01/23/part-2-variables</id><content type="html" xml:base="https://thirstydeveloper.io/tf-skeleton/2021/01/23/part-2-variables.html">&lt;p&gt;In &lt;a href=&quot;/2021/01/17/part-1-organizing-terragrunt.html&quot;&gt;part 1&lt;/a&gt; of the &lt;a href=&quot;/series/tf-skeleton.html&quot;&gt;terraform skeleton series&lt;/a&gt;, we set up a &lt;a href=&quot;https://github.com/thirstydeveloper/terraform-terragrunt-skeleton/tree/release/1.0&quot;&gt;terraform repository&lt;/a&gt; that allows the team to apply infrastructure at any level: from individual stacks to entire environments. We build on that foundation in this post, adding a variable hierarchy that similarly allows definition and overriding of variables at each level of the infrastructure.&lt;/p&gt;
 
 &lt;h1 id=&quot;goals&quot;&gt;Goals&lt;/h1&gt;
 

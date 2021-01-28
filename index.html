@@ -48,7 +48,21 @@ if(!(window.doNotTrack === "1" || navigator.doNotTrack === "1" || navigator.doNo
       <div class="wrapper">
         <div class="home">
 <h2 class="post-list-heading">Posts</h2>
-    <ul class="post-list"><li><span class="post-meta">Jan 23, 2021</span>
+    <ul class="post-list"><li><span class="post-meta">Jan 28, 2021</span>
+        <h3>
+          <a class="post-link" href="/tf-skeleton/2021/01/28/part-3-aws-backend.html">
+            Terraform Skeleton Part 3: AWS Backend
+          </a>
+        </h3><p>Terraform uses <a href="https://www.terraform.io/docs/state/index.html">state</a> files to track the resources it creates back to resource definitions in your <code class="language-plaintext highlighter-rouge">*.tf</code> files. Each deployment has its own state. State is stored according to the <a href="https://www.terraform.io/docs/configuration/blocks/backends/index.html">backend</a> configured for the deployment. Terraform uses a <a href="https://www.terraform.io/docs/backends/types/local.html">local backend</a> for storing state on the local filesystem by default, which is what we’ve been using for <a href="/2021/01/17/part-1-organizing-terragrunt.html">part 1</a> and <a href="/tf-skeleton/2021/01/23/part-2-variables.html">part 2</a> of the <a href="/series/tf-skeleton.html">terraform skeleton series</a>.<sup id="fnref:1" role="doc-noteref"><a href="#fn:1" class="footnote">1</a></sup> This works fine for a simple demonstration but is insufficient for production use because:</p>
+
+<div class="footnotes" role="doc-endnotes">
+  <ol>
+    <li id="fn:1" role="doc-endnote">
+      <p>Terragrunt stores local state in a <code class="language-plaintext highlighter-rouge">terraform.tfstate</code> file located underneath the <code class="language-plaintext highlighter-rouge">.terragrunt-cache</code> directory it creates within our deployment directory. <a href="#fnref:1" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+</li><li><span class="post-meta">Jan 23, 2021</span>
         <h3>
           <a class="post-link" href="/tf-skeleton/2021/01/23/part-2-variables.html">
             Terraform Skeleton Part 2: Variables
