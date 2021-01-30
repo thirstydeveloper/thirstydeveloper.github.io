@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.9.0">Jekyll</generator><link href="https://thirstydeveloper.io/feed.xml" rel="self" type="application/atom+xml" /><link href="https://thirstydeveloper.io/" rel="alternate" type="text/html" /><updated>2021-01-28T11:37:52+00:00</updated><id>https://thirstydeveloper.io/feed.xml</id><title type="html">thirstydeveloper</title><subtitle>Infrastructure-as-Code-as-a-Team</subtitle><author><name>Chris Kent</name></author><entry><title type="html">Terraform Skeleton Part 3: AWS Backend</title><link href="https://thirstydeveloper.io/tf-skeleton/2021/01/28/part-3-aws-backend.html" rel="alternate" type="text/html" title="Terraform Skeleton Part 3: AWS Backend" /><published>2021-01-28T11:00:00+00:00</published><updated>2021-01-28T11:00:00+00:00</updated><id>https://thirstydeveloper.io/tf-skeleton/2021/01/28/part-3-aws-backend</id><content type="html" xml:base="https://thirstydeveloper.io/tf-skeleton/2021/01/28/part-3-aws-backend.html">&lt;p&gt;Terraform uses &lt;a href=&quot;https://www.terraform.io/docs/state/index.html&quot;&gt;state&lt;/a&gt; files to track the resources it creates back to resource definitions in your &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;*.tf&lt;/code&gt; files. Each deployment has its own state. State is stored according to the &lt;a href=&quot;https://www.terraform.io/docs/configuration/blocks/backends/index.html&quot;&gt;backend&lt;/a&gt; configured for the deployment. Terraform uses a &lt;a href=&quot;https://www.terraform.io/docs/backends/types/local.html&quot;&gt;local backend&lt;/a&gt; for storing state on the local filesystem by default, which is what we’ve been using for &lt;a href=&quot;/2021/01/17/part-1-organizing-terragrunt.html&quot;&gt;part 1&lt;/a&gt; and &lt;a href=&quot;/tf-skeleton/2021/01/23/part-2-variables.html&quot;&gt;part 2&lt;/a&gt; of the &lt;a href=&quot;/series/tf-skeleton.html&quot;&gt;terraform skeleton series&lt;/a&gt;.&lt;sup id=&quot;fnref:1&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:1&quot; class=&quot;footnote&quot;&gt;1&lt;/a&gt;&lt;/sup&gt; This works fine for a simple demonstration but is insufficient for production use because:&lt;/p&gt;
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.9.0">Jekyll</generator><link href="https://thirstydeveloper.io/feed.xml" rel="self" type="application/atom+xml" /><link href="https://thirstydeveloper.io/" rel="alternate" type="text/html" /><updated>2021-01-30T11:29:05+00:00</updated><id>https://thirstydeveloper.io/feed.xml</id><title type="html">thirstydeveloper</title><subtitle>Infrastructure-as-Code-as-a-Team</subtitle><author><name>Chris Kent</name></author><entry><title type="html">Terraform Skeleton Part 3: AWS Backend</title><link href="https://thirstydeveloper.io/tf-skeleton/2021/01/28/part-3-aws-backend.html" rel="alternate" type="text/html" title="Terraform Skeleton Part 3: AWS Backend" /><published>2021-01-28T11:00:00+00:00</published><updated>2021-01-28T11:00:00+00:00</updated><id>https://thirstydeveloper.io/tf-skeleton/2021/01/28/part-3-aws-backend</id><content type="html" xml:base="https://thirstydeveloper.io/tf-skeleton/2021/01/28/part-3-aws-backend.html">&lt;p&gt;Terraform uses &lt;a href=&quot;https://www.terraform.io/docs/state/index.html&quot;&gt;state&lt;/a&gt; files to track the resources it creates back to resource definitions in your &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;*.tf&lt;/code&gt; files. Each deployment has its own state. State is stored according to the &lt;a href=&quot;https://www.terraform.io/docs/configuration/blocks/backends/index.html&quot;&gt;backend&lt;/a&gt; configured for the deployment. Terraform uses a &lt;a href=&quot;https://www.terraform.io/docs/backends/types/local.html&quot;&gt;local backend&lt;/a&gt; for storing state on the local filesystem by default, which is what we’ve been using for &lt;a href=&quot;/2021/01/17/part-1-organizing-terragrunt.html&quot;&gt;part 1&lt;/a&gt; and &lt;a href=&quot;/tf-skeleton/2021/01/23/part-2-variables.html&quot;&gt;part 2&lt;/a&gt; of the &lt;a href=&quot;/series/tf-skeleton.html&quot;&gt;terraform skeleton series&lt;/a&gt;.&lt;sup id=&quot;fnref:1&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:1&quot; class=&quot;footnote&quot;&gt;1&lt;/a&gt;&lt;/sup&gt; This works fine for a simple demonstration but is insufficient for production use because:&lt;/p&gt;
 
 &lt;ol&gt;
   &lt;li&gt;You can only run terraform commands on your deployments from that one machine&lt;/li&gt;
@@ -191,30 +191,29 @@ Do you want to copy existing state to the new backend?
 &lt;p&gt;While it is good enough for today’s skeleton, there are some limitations of the terragrunt approach worth covering:&lt;/p&gt;
 
 &lt;ol&gt;
-  &lt;li&gt;Terragrunt lacks security defaults on the log bucket&lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Terragrunt lacks security defaults on the log bucket&lt;/p&gt;
+
+    &lt;p&gt;If terragrunt creates the log bucket, it will not have encryption enabled and it will not have public access explicitly blocked. For this reason, you should strongly consider self-management of the log bucket. I tend to do this with a CloudFormation stack.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Sometimes you don’t want auto-creation of the state bucket and lock table&lt;/p&gt;
+
+    &lt;p&gt;Once I start distributing ownership of pieces of infrastructure to different teams, I want to control where state files are stored as much as possible, which means avoiding a situation where a team accidentally creates a new state bucket or lock table. Consistent state file storage makes it easier to audit infrastructure for compliance with team and organization standards using tools like &lt;a href=&quot;https://terraform-compliance.com/&quot;&gt;terraform-compliance&lt;/a&gt;. Easier auditing in turn makes it more palatable to push down infrastructure ownership responsibilities.&lt;/p&gt;
+
+    &lt;p&gt;For a single team owning all infrastructure, however, auto-creation is likely safe enough.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Terragrunt doesn’t offer full control over the credentials used to access the terraform state&lt;/p&gt;
+
+    &lt;p&gt;The &lt;a href=&quot;https://terragrunt.gruntwork.io/docs/reference/config-blocks-and-attributes/#remote_state&quot;&gt;remote_state&lt;/a&gt; block has a few fields for specifying a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;role_arn&lt;/code&gt; or AWS &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;profile&lt;/code&gt; to use for remote state access, but you can’t control things like &lt;a href=&quot;https://docs.aws.amazon.com/IAM/latest/UserGuide/id_session-tags.html&quot;&gt;IAM session tags&lt;/a&gt;, transitive tag usage, or assume role policies.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Terragrunt doesn’t offer full control over all fields on the buckets and table&lt;/p&gt;
+
+    &lt;p&gt;While terragrunt applies sensible security defaults, you can’t control everything using its &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;remote_state&lt;/code&gt; block. For example, you’ll need to self-manage if you need to specify specific KMS keys for encryption of the bucket or table. Similarly, if you want to set up replication of your terraform state bucket, self-management is the way to go.&lt;/p&gt;
+  &lt;/li&gt;
 &lt;/ol&gt;
-
-&lt;p&gt;If terragrunt creates the log bucket, it will not have encryption enabled and it will not have public access explicitly blocked. For this reason, you should strongly consider self-management of the log bucket. I tend to do this with a CloudFormation stack.&lt;/p&gt;
-
-&lt;ol&gt;
-  &lt;li&gt;Sometimes you don’t want auto-creation of the state bucket and lock table&lt;/li&gt;
-&lt;/ol&gt;
-
-&lt;p&gt;Once I start distributing ownership of pieces of infrastructure to different teams, I want to control where state files are stored as much as possible, which means avoiding a situation where a team accidentally creates a new state bucket or lock table. Consistent state file storage makes it easier to audit infrastructure for compliance with team and organization standards using tools like &lt;a href=&quot;https://terraform-compliance.com/&quot;&gt;terraform-compliance&lt;/a&gt;. Easier auditing in turn makes it more palatable to push down infrastructure ownership responsibilities.&lt;/p&gt;
-
-&lt;p&gt;For a single team owning all infrastructure, however, auto-creation is likely safe enough.&lt;/p&gt;
-
-&lt;ol&gt;
-  &lt;li&gt;Terragrunt doesn’t offer full control over the credentials used to access the terraform state&lt;/li&gt;
-&lt;/ol&gt;
-
-&lt;p&gt;The &lt;a href=&quot;https://terragrunt.gruntwork.io/docs/reference/config-blocks-and-attributes/#remote_state&quot;&gt;remote_state&lt;/a&gt; block has a few fields for specifying a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;role_arn&lt;/code&gt; or AWS &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;profile&lt;/code&gt; to use for remote state access, but you can’t control things like &lt;a href=&quot;https://docs.aws.amazon.com/IAM/latest/UserGuide/id_session-tags.html&quot;&gt;IAM session tags&lt;/a&gt;, transitive tag usage, or assume role policies.&lt;/p&gt;
-
-&lt;ol&gt;
-  &lt;li&gt;Terragrunt doesn’t offer full control over all fields on the buckets and table&lt;/li&gt;
-&lt;/ol&gt;
-
-&lt;p&gt;While terragrunt applies sensible security defaults, you can’t control everything using its &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;remote_state&lt;/code&gt; block. For example, you’ll need to self-manage if you need to specify specific KMS keys for encryption of the bucket or table. Similarly, if you want to set up replication of your terraform state bucket, self-management is the way to go.&lt;/p&gt;
 
 &lt;h1 id=&quot;whats-next&quot;&gt;What’s next?&lt;/h1&gt;
 
