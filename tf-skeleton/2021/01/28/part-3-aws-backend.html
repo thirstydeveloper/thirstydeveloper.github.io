@@ -265,11 +265,9 @@ Do you want to copy existing state to the new backend?
     <p>If terragrunt creates the log bucket, it will not have encryption enabled and it will not have public access explicitly blocked. For this reason, you should strongly consider self-management of the log bucket. I tend to do this with a CloudFormation stack.</p>
   </li>
   <li>
-    <p>Sometimes you don’t want auto-creation of the state bucket and lock table</p>
+    <p>Disabling auto-creation of the state bucket and lock table is broken<sup id="fnref:3" role="doc-noteref"><a href="#fn:3" class="footnote">3</a></sup></p>
 
-    <p>Once I start distributing ownership of pieces of infrastructure to different teams, I want to control where state files are stored as much as possible, which means avoiding a situation where a team accidentally creates a new state bucket or lock table. Consistent state file storage makes it easier to audit infrastructure for compliance with team and organization standards using tools like <a href="https://terraform-compliance.com/">terraform-compliance</a>. Easier auditing in turn makes it more palatable to push down infrastructure ownership responsibilities.</p>
-
-    <p>For a single team owning all infrastructure, however, auto-creation is likely safe enough.</p>
+    <p>For a single team owning all infrastructure auto-creation is likely safe enough. Once I start distributing ownership of pieces of infrastructure to different teams, I want to control where state files are stored as much as possible, which means avoiding a situation where a team accidentally creates a new state bucket or lock table. Consistent state file storage makes it easier to audit infrastructure for compliance with team and organization standards using tools like <a href="https://terraform-compliance.com/">terraform-compliance</a>. Easier auditing in turn makes it more palatable to push down infrastructure ownership responsibilities.</p>
   </li>
   <li>
     <p>Terragrunt doesn’t offer full control over the credentials used to access the terraform state</p>
@@ -309,6 +307,9 @@ Do you want to copy existing state to the new backend?
     <li id="fn:2" role="doc-endnote">
 
       <p>The terragrunt remote state approach we cover here uses the newer <code class="language-plaintext highlighter-rouge">generate</code> option, which was <a href="https://github.com/gruntwork-io/terragrunt/pull/1050">added</a> in terragrunt <a href="https://github.com/gruntwork-io/terragrunt/releases/tag/v0.22.0">v0.22.0</a>. Before that version, terragrunt wouldn’t generate a backend.tf file but would instead pass CLI arguments to the terraform command, making use of terraform’s partial configuration implementation. The generate approach has several advantages over the old method. The most notable is that previously, you had to include an empty backend configuration block in every stack, whereas with the generate approach you do not. <a href="#fnref:2" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:3" role="doc-endnote">
+      <p>Terragrunt has a <code class="language-plaintext highlighter-rouge">disable_init</code> attribute on the <a href="https://terragrunt.gruntwork.io/docs/reference/config-blocks-and-attributes/#remote_state">remote_state</a> block, which will prevent auto-creation but, as described by this <a href="https://github.com/gruntwork-io/terragrunt/issues/1422">open issue</a>, also completely disables backend initialization. <a href="#fnref:3" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
     </li>
   </ol>
 </div>
