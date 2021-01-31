@@ -177,7 +177,7 @@ if(!(window.doNotTrack === "1" || navigator.doNotTrack === "1" || navigator.doNo
   <li>A single bucket, <code class="language-plaintext highlighter-rouge">terraform-skeleton-state</code>, for all deployment state files</li>
   <li>A key/prefix unique to each deployment based on the relative path from the <code class="language-plaintext highlighter-rouge">root.hcl</code> file</li>
   <li>A corresponding DynamoDB lock table, <code class="language-plaintext highlighter-rouge">terraform-skeleton-state-locks</code></li>
-  <li>A logging bucket, <code class="language-plaintext highlighter-rouge">terraform-skeleton-state-logs</code>, for logging all S3 access requests to out state bucket</li>
+  <li>A logging bucket, <code class="language-plaintext highlighter-rouge">terraform-skeleton-state-logs</code>, for logging all S3 access requests to the state bucket</li>
 </ul>
 
 <h2 id="how-this-works">How This Works</h2>
