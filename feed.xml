@@ -1,4 +1,361 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.9.0">Jekyll</generator><link href="https://thirstydeveloper.io/feed.xml" rel="self" type="application/atom+xml" /><link href="https://thirstydeveloper.io/" rel="alternate" type="text/html" /><updated>2021-01-31T13:11:09+00:00</updated><id>https://thirstydeveloper.io/feed.xml</id><title type="html">thirstydeveloper</title><subtitle>Infrastructure-as-Code-as-a-Team</subtitle><author><name>Chris Kent</name></author><entry><title type="html">Terraform Skeleton Part 3: AWS Backend</title><link href="https://thirstydeveloper.io/tf-skeleton/2021/01/28/part-3-aws-backend.html" rel="alternate" type="text/html" title="Terraform Skeleton Part 3: AWS Backend" /><published>2021-01-28T11:00:00+00:00</published><updated>2021-01-28T11:00:00+00:00</updated><id>https://thirstydeveloper.io/tf-skeleton/2021/01/28/part-3-aws-backend</id><content type="html" xml:base="https://thirstydeveloper.io/tf-skeleton/2021/01/28/part-3-aws-backend.html">&lt;p&gt;Terraform uses &lt;a href=&quot;https://www.terraform.io/docs/state/index.html&quot;&gt;state&lt;/a&gt; files to track the resources it creates back to resource definitions in your &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;*.tf&lt;/code&gt; files. Each deployment has its own state. State is stored according to the &lt;a href=&quot;https://www.terraform.io/docs/configuration/blocks/backends/index.html&quot;&gt;backend&lt;/a&gt; configured for the deployment. Terraform uses a &lt;a href=&quot;https://www.terraform.io/docs/backends/types/local.html&quot;&gt;local backend&lt;/a&gt; for storing state on the local filesystem by default, which is what we’ve been using for &lt;a href=&quot;/2021/01/17/part-1-organizing-terragrunt.html&quot;&gt;part 1&lt;/a&gt; and &lt;a href=&quot;/tf-skeleton/2021/01/23/part-2-variables.html&quot;&gt;part 2&lt;/a&gt; of the &lt;a href=&quot;/series/tf-skeleton.html&quot;&gt;terraform skeleton series&lt;/a&gt;.&lt;sup id=&quot;fnref:1&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:1&quot; class=&quot;footnote&quot;&gt;1&lt;/a&gt;&lt;/sup&gt; This works fine for a simple demonstration but is insufficient for production use because:&lt;/p&gt;
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.9.0">Jekyll</generator><link href="https://thirstydeveloper.io/feed.xml" rel="self" type="application/atom+xml" /><link href="https://thirstydeveloper.io/" rel="alternate" type="text/html" /><updated>2021-02-10T22:43:57+00:00</updated><id>https://thirstydeveloper.io/feed.xml</id><title type="html">thirstydeveloper</title><subtitle>Infrastructure-as-Code-as-a-Team</subtitle><author><name>Chris Kent</name></author><entry><title type="html">Terraform Skeleton Part 4: Backend Role</title><link href="https://thirstydeveloper.io/tf-skeleton/2021/02/10/part-4-backend-role.html" rel="alternate" type="text/html" title="Terraform Skeleton Part 4: Backend Role" /><published>2021-02-10T22:30:00+00:00</published><updated>2021-02-10T22:30:00+00:00</updated><id>https://thirstydeveloper.io/tf-skeleton/2021/02/10/part-4-backend-role</id><content type="html" xml:base="https://thirstydeveloper.io/tf-skeleton/2021/02/10/part-4-backend-role.html">&lt;p&gt;The &lt;a href=&quot;/tf-skeleton/2021/01/28/part-3-aws-backend.html&quot;&gt;previous entry&lt;/a&gt; enhanced the &lt;a href=&quot;/series/tf-skeleton.html&quot;&gt;terraform skeleton&lt;/a&gt; with remote state storage using AWS S3 and DynamoDB. Access to the state was granted based on whatever AWS credentials were configured in the shell at the time terraform was executed.&lt;/p&gt;
+
+&lt;p&gt;Terraform state is a highly sensitive resource. It is likely to contain lots of sensitive information including passwords and access tokens. Additionally, recovering from a lost state file means either recreating all the infrastructure that was in it, or spending some quality time running &lt;a href=&quot;https://www.terraform.io/docs/cli/import/index.html&quot;&gt;terraform import&lt;/a&gt; commands for resources that support it, and hand modifying state files for those that do not.&lt;/p&gt;
+
+&lt;p&gt;On projects I’ve supported, developers have had near-administrative level permissions on their cloud accounts. Typically, these are the credentials they will use when running terraform, which also requires near-administrative level permissions to manage the wide variety of cloud resources a project is likely to need. Unless instructed otherwise, terraform will use those administrative credentials for accessing the state, and that opens up the potential for disaster (e.g., a developer mistakenly deleting a state bucket).&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/tf-skeleton/part-4/admin-state-access.png&quot; alt=&quot;Accessing terraform state with administrative IAM user credentials&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;In this post, we’ll create a dedicated IAM role for backend access so that every developer on our team working with terraform will access state with the same permissions, and those permissions are scoped to just what is needed to read and write state.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/tf-skeleton/part-4/backend-role-state-access.png&quot; alt=&quot;Accessing terraform state with least-privilege IAM role credentials&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Using a dedicated backend role for state access will help avoid “works on my machine problems” and allow us, in future entries, to lock down access to terraform state due to its sensitive nature.&lt;/p&gt;
+
+&lt;h1 id=&quot;goals&quot;&gt;Goals&lt;/h1&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;The skeleton uses a dedicated IAM role for accessing terraform state such that everyone on the team accesses state with the same least-privilege permissions&lt;/li&gt;
+  &lt;li&gt;The IAM role and its permissions are controlled using infrastructure-as-code&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;If you prefer to jump to the end, the code implementing the final result is available on &lt;a href=&quot;https://github.com/thirstydeveloper/terraform-terragrunt-skeleton/tree/release/1.3&quot;&gt;GitHub&lt;/a&gt;.&lt;/p&gt;
+
+&lt;h1 id=&quot;setup&quot;&gt;Setup&lt;/h1&gt;
+
+&lt;p&gt;You will need:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;An AWS account to serve as your terraform “admin” account, holding the state resources&lt;/li&gt;
+  &lt;li&gt;The &lt;a href=&quot;https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html&quot;&gt;AWS CLI&lt;/a&gt; installed on your workstation&lt;/li&gt;
+  &lt;li&gt;Credentials for that account configured in the terminal for running &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;aws&lt;/code&gt; CLI commands&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h1 id=&quot;the-administrative-account&quot;&gt;The Administrative Account&lt;/h1&gt;
+
+&lt;p&gt;Before we create our backend IAM role, it is worth discussing cloud account organization. Chances are strong that you’re going to have more than one account.&lt;sup id=&quot;fnref:1&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:1&quot; class=&quot;footnote&quot;&gt;1&lt;/a&gt;&lt;/sup&gt; Typically, one per application environment is recommended:&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/tf-skeleton/part-4/unmanaged-app-accounts.png&quot; alt=&quot;Separate AWS accounts for dev, test, and production app-tier environments&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;With multiple accounts, the question of where we put our terraform state arises. We could put the state for each tier-environment in its corresponding account (e.g., app-dev state in the app-dev account) but I don’t like doing that for several reasons:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;It assumes our tiers line up one-to-one with accounts, which may not always be true&lt;/li&gt;
+  &lt;li&gt;I prefer to restrict administrative access to terraform state to a subset of those who have access to environment accounts.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;Instead, I prefer to use a separate admin account to hold all the state, an approach recommended in &lt;a href=&quot;https://www.terraform.io/docs/backends/types/s3.html#multi-account-aws-architecture&quot;&gt;the documentation for the S3 backend&lt;/a&gt;:&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/assets/tf-skeleton/part-4/admin-managed-app-accounts.png&quot; alt=&quot;Admin AWS account managing app accounts&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;With this approach, our admin account contains:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;S3 bucket(s) for terraform state&lt;/li&gt;
+  &lt;li&gt;S3 bucket(s) for state logs&lt;sup id=&quot;fnref:2&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:2&quot; class=&quot;footnote&quot;&gt;2&lt;/a&gt;&lt;/sup&gt;&lt;/li&gt;
+  &lt;li&gt;DynamoDB table(s) for terraform locks&lt;/li&gt;
+  &lt;li&gt;IAM roles for accessing the above&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;The first three were created in the &lt;a href=&quot;/tf-skeleton/2021/01/28/part-3-aws-backend.html&quot;&gt;previous entry&lt;/a&gt;. Now, we’ll create our backend role.&lt;/p&gt;
+
+&lt;h1 id=&quot;the-backend-role&quot;&gt;The Backend Role&lt;/h1&gt;
+
+&lt;p&gt;We have a bit of a chicken and egg problem with the backend role. We want to control all infrastructure as code, the backend role included, but we can’t use the backend role for terraform until it is created. A similar problem presents itself if you want to self-manage the creation of your S3 state bucket and DynamoDB lock table.&lt;/p&gt;
+
+&lt;p&gt;While it’s possible to use terraform to create these resources by having a stack that either stores state locally initially and/or uses user credentials instead of the backend role, I tend not to do that. I prefer to separate the infrastructure needed for terraform to run from the infrastructure terraform creates, and manage the former using &lt;a href=&quot;https://aws.amazon.com/cloudformation/&quot;&gt;CloudFormation&lt;/a&gt;. A simple CloudFormation stack is more than capable of managing the few resources needed to bootstrap an AWS account to serve as our admin account and means we offload the state management of that bootstrap infrastructure to AWS’s CloudFormation tool.&lt;/p&gt;
+
+&lt;h2 id=&quot;preparation&quot;&gt;Preparation&lt;/h2&gt;
+
+&lt;p&gt;Before adding CloudFormation templates to our infra repository, I like to add a &lt;a href=&quot;https://pre-commit.com/&quot;&gt;pre-commit&lt;/a&gt; hook that validates those templates. It’s easy to make syntax errors with CloudFormation; using a validation hook helps to shorten the feedback loop. I do the following:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Store bootstrap CloudFormation templates under &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;init/&lt;/code&gt; in the infra repo&lt;/li&gt;
+  &lt;li&gt;Use a file extension of &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;.cf.yml&lt;/code&gt; to differentiate CloudFormation templates from regular YAML files&lt;/li&gt;
+  &lt;li&gt;Use the &lt;a href=&quot;https://github.com/aws-cloudformation/cfn-python-lint&quot;&gt;cfn-python-lint&lt;/a&gt; pre-commit hook to validate the CloudFormation templates&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;Let’s add the hook to our &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;.pre-commit-config.yaml&lt;/code&gt;:&lt;/p&gt;
+
+&lt;div class=&quot;language-diff highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;gh&quot;&gt;diff --git a/.pre-commit-config.yaml b/.pre-commit-config.yaml
+index fa080cf..27217e9 100644
+&lt;/span&gt;&lt;span class=&quot;gd&quot;&gt;--- a/.pre-commit-config.yaml
+&lt;/span&gt;&lt;span class=&quot;gi&quot;&gt;+++ b/.pre-commit-config.yaml
+&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;@@ -24,3 +25,9 @@&lt;/span&gt; repos:
+   rev: v0.1.10
+   hooks:
+     - id: terragrunt-hclfmt
+&lt;span class=&quot;gi&quot;&gt;+
++- repo: https://github.com/aws-cloudformation/cfn-python-lint
++  rev: v0.44.5
++  hooks:
++  -   id: cfn-python-lint
++      files: init/.*\.cf\.(yml|yaml)$
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This configures the hook to scan all templates under the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;init/&lt;/code&gt; directory. We also need to tell our existing &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;check-yaml&lt;/code&gt; hook to ignore the CloudFormation templates because it will throw errors on CloudFormation’s interpolation syntax. We can do that with:&lt;/p&gt;
+
+&lt;div class=&quot;language-diff highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;gh&quot;&gt;diff --git a/.pre-commit-config.yaml b/.pre-commit-config.yaml
+index fa080cf..27217e9 100644
+&lt;/span&gt;&lt;span class=&quot;gd&quot;&gt;--- a/.pre-commit-config.yaml
+&lt;/span&gt;&lt;span class=&quot;gi&quot;&gt;+++ b/.pre-commit-config.yaml
+&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;@@ -8,6 +8,7 @@&lt;/span&gt; repos:
+       args: [ --markdown-linebreak-ext=* ]
+     - id: check-yaml
+       args: [ --allow-multiple-documents ]
+&lt;span class=&quot;gi&quot;&gt;+      exclude: .*\.cf\.(yml|yaml)$
+&lt;/span&gt;     - id: check-json
+     - id: check-merge-conflict
+     - id: detect-aws-credentials
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Finally, run &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;pre-commit install&lt;/code&gt; and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;pre-commit run -a&lt;/code&gt; to make sure all hooks are currently passing.&lt;/p&gt;
+
+&lt;h2 id=&quot;admin-account-cloudformation-template&quot;&gt;Admin Account CloudFormation Template&lt;/h2&gt;
+
+&lt;p&gt;Create a new CloudFormation template at &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;init/admin/init-admin-account.cf.yml&lt;/code&gt;. You’ll need &lt;a href=&quot;https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/parameters-section-structure.html&quot;&gt;parameters&lt;/a&gt; for the admin account ID, state bucket, log bucket, and lock table names. I like to use &lt;a href=&quot;https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/metadata-section-structure.html&quot;&gt;CloudFormation’s metadata property&lt;/a&gt; to group the parameters sensibly, should you use the AWS Management Console to deploy the stack:&lt;/p&gt;
+
+&lt;div class=&quot;language-yaml highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nn&quot;&gt;---&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;AWSTemplateFormatVersion&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;2010-09-09'&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;Description&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Initialize terraform admin account&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;Metadata&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;s&quot;&gt;AWS::CloudFormation::Interface:&lt;/span&gt;
+    &lt;span class=&quot;s&quot;&gt;ParameterGroups&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;Label&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+          &lt;span class=&quot;na&quot;&gt;default&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Admin Account Config&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;Parameters&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+          &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;AdminAccountId&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;Label&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+          &lt;span class=&quot;na&quot;&gt;default&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Terraform State Resources&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;Parameters&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+          &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;StateBucketName&lt;/span&gt;
+          &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;StateLogBucketName&lt;/span&gt;
+          &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;LockTableName&lt;/span&gt;
+&lt;span class=&quot;na&quot;&gt;Parameters&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;AdminAccountId&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;Type&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;String&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;Description&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Account ID of the admin account to contain the state&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;StateBucketName&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;Type&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;String&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;Description&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Name of the S3 bucket for terraform state&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;StateLogBucketName&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;Type&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;String&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;Description&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Name of the S3 bucket for terraform state logs&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;LockTableName&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;Type&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;String&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;Description&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Name of the terraform DynamoDB lock table&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Next, add a &lt;a href=&quot;https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/rules-section-structure.html&quot;&gt;CloudFormation rule&lt;/a&gt; to restrict deployment of the stack to only the specified account. This is to help prevent someone from deploying the stack to the wrong account.&lt;/p&gt;
+
+&lt;div class=&quot;language-yaml highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;na&quot;&gt;Rules&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;EnsureDeployingToCorrectAccount&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;Assertions&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;Assert&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+        &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;Fn::Equals'&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+          &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;!Ref&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;AWS::AccountId&lt;/span&gt;
+          &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;!Ref&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;AdminAccountId&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;AssertDescription&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;Stack&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s&quot;&gt;can&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s&quot;&gt;only&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s&quot;&gt;be&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s&quot;&gt;deployed&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s&quot;&gt;into&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s&quot;&gt;the&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s&quot;&gt;specified&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s&quot;&gt;AdminAccountId'&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Next, add a resource to create an IAM managed policy for read/write state access:&lt;/p&gt;
+
+&lt;div class=&quot;language-yaml highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;na&quot;&gt;Resources&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;TerraformStateReadWritePolicy&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;Type&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;AWS::IAM::ManagedPolicy'&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;Properties&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;ManagedPolicyName&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;TerraformStateReadWrite&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;Path&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;/terraform/&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;Description&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Read/write access to terraform state&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;PolicyDocument&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;Version&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;2012-10-17&lt;/span&gt;
+        &lt;span class=&quot;c1&quot;&gt;# Permissions are based on:&lt;/span&gt;
+        &lt;span class=&quot;c1&quot;&gt;# https://www.terraform.io/docs/backends/types/s3.html#example-configuration&lt;/span&gt;
+        &lt;span class=&quot;c1&quot;&gt;# https://github.com/gruntwork-io/terragrunt/issues/919&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;Statement&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+          &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;Sid&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;AllowStateBucketList&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;Effect&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Allow&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;Action&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;s3:ListBucket'&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;s3:GetBucketVersioning'&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;Resource&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;!Sub&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;arn:aws:s3:::${StateBucketName}&quot;&lt;/span&gt;
+          &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;Sid&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;AllowStateReadWrite&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;Effect&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Allow&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;Action&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;s3:GetObject'&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;s3:PutObject'&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;Resource&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;!Sub&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;arn:aws:s3:::${StateBucketName}/*&quot;&lt;/span&gt;
+          &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;Sid&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;AllowStateLockReadWrite&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;Effect&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Allow&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;Action&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;dynamodb:DescribeTable'&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;dynamodb:GetItem'&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;dynamodb:PutItem'&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;dynamodb:DeleteItem'&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;Resource&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;!Sub&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${LockTableName}&quot;&lt;/span&gt;
+          &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;Sid&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;AllowStateBucketCreation&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;Effect&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Allow&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;Action&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;s3:GetBucketAcl'&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;s3:GetBucketLogging'&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;s3:CreateBucket'&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;s3:PutBucketPublicAccessBlock'&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;s3:PutBucketTagging'&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;s3:PutBucketPolicy'&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;s3:PutBucketVersioning'&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;s3:PutEncryptionConfiguration'&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;s3:PutBucketAcl'&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;s3:PutBucketLogging'&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;Resource&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;!Sub&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;arn:aws:s3:::${StateBucketName}&quot;&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;!Sub&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;arn:aws:s3:::${StateLogBucketName}&quot;&lt;/span&gt;
+          &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;Sid&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;AllowLockTableCreation&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;Effect&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Allow&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;Action&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;dynamodb:CreateTable'&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;Resource&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;!Sub&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${LockTableName}&quot;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This policy grants everything needed by the S3 backend to manage the state. It’s worth noting that &lt;a href=&quot;https://github.com/gruntwork-io/terragrunt/issues/919&quot;&gt;terragrunt requires additional permissions&lt;/a&gt; beyond what &lt;a href=&quot;https://www.terraform.io/docs/backends/types/s3.html#example-configuration&quot;&gt;terraform specifies&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;In particular, this policy &lt;em&gt;does not&lt;/em&gt; grant delete access to the terraform state. As already discussed, losing your state file can create a tremendous amount of pain. Using a versioned S3 bucket helps, but you can still get yourself into trouble if you delete the bucket itself. Since the backend role does not require delete access, it does not get it.&lt;/p&gt;
+
+&lt;p&gt;Furthermore, the policy is restricted to creating only the specified bucket and lock table names. Given that terragrunt will auto-create a bucket and lock table if they do not exist, this restriction helps avoid unintended auto-creations due to developer errors.&lt;/p&gt;
+
+&lt;p&gt;Next, we’ll create the backend role, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TerraformBackend&lt;/code&gt;, and attach the policy to it:&lt;/p&gt;
+
+&lt;div class=&quot;language-yaml highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;  &lt;span class=&quot;na&quot;&gt;TerraformBackendRole&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;Type&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;AWS::IAM::Role'&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;Properties&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;AssumeRolePolicyDocument&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;Version&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;2012-10-17&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;Statement&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+          &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;Effect&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Allow&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;Principal&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+              &lt;span class=&quot;na&quot;&gt;AWS&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;!Ref&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;AWS::AccountId&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;Action&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+              &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;sts:AssumeRole'&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;Condition&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+              &lt;span class=&quot;na&quot;&gt;StringEquals&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+                &lt;span class=&quot;s&quot;&gt;aws:PrincipalType: User&lt;/span&gt;
+              &lt;span class=&quot;na&quot;&gt;StringLike&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+                &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;aws:PrincipalTag/Terraformer'&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;*'&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;RoleName&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;TerraformBackend&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;Path&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;/terraform/&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;ManagedPolicyArns&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+        &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;!Ref&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;TerraformStateReadWritePolicy&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;In the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;AssumeRolePolicyDocument&lt;/code&gt;, I’m specifying who can assume the backend role. There are several ways to go about this, depending on what type of principals are doing the assuming. You could use IAM groups if the principals are IAM users, or SAML context keys if dealing with federated users. I’m going to use an &lt;a href=&quot;https://docs.aws.amazon.com/IAM/latest/UserGuide/introduction_attribute-based-access-control.html&quot;&gt;attribute-based access control (ABAC) approach&lt;/a&gt; that will grant access if the principal has a tag of &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Terraformer&lt;/code&gt;. I’m also going to restrict access down to IAM users since that’s what I’m working with. The same approach should work for other principal types as well.&lt;/p&gt;
+
+&lt;p&gt;Finally, let’s add a Makefile to script deployment of our CloudFormation stack:&lt;/p&gt;
+
+&lt;div class=&quot;language-make highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nv&quot;&gt;ADMIN_INIT_STACK_NAME&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;:=&lt;/span&gt; tf-admin-init
+&lt;span class=&quot;nv&quot;&gt;STATE_BUCKET_NAME&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;:=&lt;/span&gt; terraform-skeleton-state
+&lt;span class=&quot;nv&quot;&gt;STATE_LOG_BUCKET_NAME&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;:=&lt;/span&gt; terraform-skeleton-state-logs
+&lt;span class=&quot;nv&quot;&gt;LOCK_TABLE_NAME&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;:=&lt;/span&gt; terraform-skeleton-state-locks
+
+&lt;span class=&quot;c&quot;&gt;# Use a known profile to ensure account ID is correct
+&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;ADMIN_ACCOUNT_ID&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;:=&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;$(&lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;shell&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+	aws &lt;span class=&quot;nt&quot;&gt;--profile&lt;/span&gt; tf-admin-account sts get-caller-identity | jq &lt;span class=&quot;nt&quot;&gt;-r&lt;/span&gt; .Account &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+&lt;span class=&quot;nf&quot;&gt;)&lt;/span&gt;
+
+&lt;span class=&quot;nv&quot;&gt;BACKEND_ROLE_PATH&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;:=&lt;/span&gt; terraform/TerraformBackend
+&lt;span class=&quot;nv&quot;&gt;BACKEND_ROLE_ARN&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;:=&lt;/span&gt; arn:aws:iam::&lt;span class=&quot;nv&quot;&gt;${ADMIN_ACCOUNT_ID}&lt;/span&gt;:role/&lt;span class=&quot;nv&quot;&gt;${BACKEND_ROLE_PATH}&lt;/span&gt;
+
+&lt;span class=&quot;nv&quot;&gt;DEPLOYMENT_DIRS&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;:=&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;$(&lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;shell&lt;/span&gt; find deployments &lt;span class=&quot;nt&quot;&gt;-name&lt;/span&gt; terragrunt.hcl &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+	&lt;span class=&quot;nt&quot;&gt;-not&lt;/span&gt; &lt;span class=&quot;nt&quot;&gt;-path&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;*&lt;/span&gt;/.terragrunt-cache/&lt;span class=&quot;k&quot;&gt;*&lt;/span&gt; &lt;span class=&quot;nt&quot;&gt;-exec&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;dirname&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;}&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\;&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+&lt;span class=&quot;o&quot;&gt;)&lt;/span&gt;
+
+&lt;span class=&quot;nl&quot;&gt;.PHONY&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;init-admin&lt;/span&gt;
+&lt;span class=&quot;nl&quot;&gt;init-admin&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;
+	aws cloudformation deploy &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--template-file&lt;/span&gt; init/admin/init-admin-account.cf.yml &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--stack-name&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;${ADMIN_INIT_STACK_NAME}&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--capabilities&lt;/span&gt; CAPABILITY_NAMED_IAM &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--parameter-overrides&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+			&lt;span class=&quot;nv&quot;&gt;AdminAccountId&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;${ADMIN_ACCOUNT_ID}&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+			&lt;span class=&quot;nv&quot;&gt;StateBucketName&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;${STATE_BUCKET_NAME}&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+			&lt;span class=&quot;nv&quot;&gt;StateLogBucketName&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;${STATE_LOG_BUCKET_NAME}&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+			&lt;span class=&quot;nv&quot;&gt;LockTableName&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;${LOCK_TABLE_NAME}&lt;/span&gt;
+	aws cloudformation update-termination-protection &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--stack-name&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;${ADMIN_INIT_STACK_NAME}&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--enable-termination-protection&lt;/span&gt;
+
+&lt;span class=&quot;nl&quot;&gt;.PHONY&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;test-backend-assume&lt;/span&gt;
+&lt;span class=&quot;nl&quot;&gt;test-backend-assume&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;
+	aws sts assume-role &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--role-arn&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;${BACKEND_ROLE_ARN}&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--role-session-name&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;$(&lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;shell&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;whoami&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;)&lt;/span&gt;
+
+&lt;span class=&quot;nl&quot;&gt;.PHONY&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;init-all&lt;/span&gt;
+&lt;span class=&quot;nl&quot;&gt;init-all&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;
+	&lt;span class=&quot;k&quot;&gt;for &lt;/span&gt;d &lt;span class=&quot;k&quot;&gt;in&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;${DEPLOYMENT_DIRS}&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;do&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nb&quot;&gt;pushd&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;$$&lt;/span&gt;d&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		terragrunt init&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nb&quot;&gt;popd&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+	&lt;span class=&quot;k&quot;&gt;done&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The Makefile:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Uses the &lt;a href=&quot;https://awscli.amazonaws.com/v2/documentation/api/latest/reference/cloudformation/deploy/index.html&quot;&gt;aws cloudformation deploy&lt;/a&gt; command, which will both create the stack if it does not exist and update it if it does.&lt;/li&gt;
+  &lt;li&gt;Turns on termination protection as a basic safety measure on our stack.&lt;/li&gt;
+  &lt;li&gt;Provides a test command to verify our ability to assume the backend role.&lt;/li&gt;
+  &lt;li&gt;Provides an init-all command, which will be needed when we change out deployments to use the new backend role.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;It’s time to deploy the backend role and use it. To do so:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Open a terminal and ensure you have AWS credentials to deploy the stack loaded.&lt;/li&gt;
+  &lt;li&gt;Run &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;make init-admin&lt;/code&gt; to deploy the CloudFormation stack.&lt;/li&gt;
+  &lt;li&gt;Add the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Terraformer&lt;/code&gt; tag to the appropriate IAM users.&lt;sup id=&quot;fnref:3&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:3&quot; class=&quot;footnote&quot;&gt;3&lt;/a&gt;&lt;/sup&gt;&lt;/li&gt;
+  &lt;li&gt;Ensure you can assume the new backend role with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;make test-backend-assume&lt;/code&gt;.&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;Next, we need to tell terraform to use the backend role for remote state access. Do so by updating the remote_state block inside &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;root.hcl&lt;/code&gt; to include the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;role_arn&lt;/code&gt; property:&lt;/p&gt;
+
+&lt;div class=&quot;language-diff highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;gh&quot;&gt;diff --git a/deployments/root.hcl b/deployments/root.hcl
+index eed54e8..33091af 100644
+&lt;/span&gt;&lt;span class=&quot;gd&quot;&gt;--- a/deployments/root.hcl
+&lt;/span&gt;&lt;span class=&quot;gi&quot;&gt;+++ b/deployments/root.hcl
+&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;@@ -46,9 +46,10 @@&lt;/span&gt; remote_state {
+     if_exists = &quot;overwrite&quot;
+   }
+   config = {
+     bucket   = &quot;terraform-skeleton-state&quot;
+     region   = &quot;us-east-1&quot;
+     encrypt  = true
+&lt;span class=&quot;gi&quot;&gt;+    role_arn = &quot;arn:aws:iam::YOUR_ADMIN_ACCOUNT_ID:role/terraform/TerraformBackend&quot;
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;To finish switching the deployments over to the new backend configuration we must re-initialize them. Do so with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;make init-all&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;Finally, run &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;terragrunt apply-all&lt;/code&gt; from the repository root. Everything should work.&lt;/p&gt;
+
+&lt;h1 id=&quot;whats-next&quot;&gt;What’s Next?&lt;/h1&gt;
+
+&lt;p&gt;Although this was a fair amount of work, it is important. We now have a single role that gets used for all state manipulation by terraform. That role can be assumed by any of the developers working with terraform and, in future entries, can also be assumed by CI/CD jobs such that all terraform operations use a consistent set of permissions.&lt;/p&gt;
+
+&lt;p&gt;We also began creating infrastructure required to run terraform itself outside of terraform, relying on CloudFormation instead. Upcoming entries will continue this trend, which, along with the backend role we’ve created, will allow us to lock down access to our state bucket.&lt;/p&gt;
+
+&lt;h1 id=&quot;footnotes&quot;&gt;Footnotes&lt;/h1&gt;
+
+&lt;div class=&quot;footnotes&quot; role=&quot;doc-endnotes&quot;&gt;
+  &lt;ol&gt;
+    &lt;li id=&quot;fn:1&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;I’m using the AWS term &lt;em&gt;account&lt;/em&gt; here because out of the cloud providers, my teams use AWS the most heavily. Equivalents include Google Cloud Platform (GCP) &lt;em&gt;projects&lt;/em&gt; and Microsoft Azure &lt;em&gt;resource groups&lt;/em&gt;. &lt;a href=&quot;#fnref:1&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:2&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;Another option is to place the logs bucket in a dedicated information security account. For more on this, I recommend videos from re:invent covering multi-account architectures. Here’s &lt;a href=&quot;https://www.youtube.com/watch?reload=9&amp;amp;v=fxo67UeeN1A&quot;&gt;one&lt;/a&gt; from 2019. &lt;a href=&quot;#fnref:2&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:3&quot; role=&quot;doc-endnote&quot;&gt;
+      &lt;p&gt;Although I don’t talk about it here, you would want to have tight control over who can add the Terraformer tag. Similarly, you need tight control over the ability to attach terraform IAM policies. The control mechanisms to use depend on how your organization manages user access to cloud accounts and is beyond the scope of this post. &lt;a href=&quot;#fnref:3&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+  &lt;/ol&gt;
+&lt;/div&gt;</content><author><name>Chris</name></author><category term="tf-skeleton" /><category term="terraform" /><category term="terragrunt" /><summary type="html">The previous entry enhanced the terraform skeleton with remote state storage using AWS S3 and DynamoDB. Access to the state was granted based on whatever AWS credentials were configured in the shell at the time terraform was executed.</summary></entry><entry><title type="html">Terraform Skeleton Part 3: AWS Backend</title><link href="https://thirstydeveloper.io/tf-skeleton/2021/01/28/part-3-aws-backend.html" rel="alternate" type="text/html" title="Terraform Skeleton Part 3: AWS Backend" /><published>2021-01-28T11:00:00+00:00</published><updated>2021-01-28T11:00:00+00:00</updated><id>https://thirstydeveloper.io/tf-skeleton/2021/01/28/part-3-aws-backend</id><content type="html" xml:base="https://thirstydeveloper.io/tf-skeleton/2021/01/28/part-3-aws-backend.html">&lt;p&gt;Terraform uses &lt;a href=&quot;https://www.terraform.io/docs/state/index.html&quot;&gt;state&lt;/a&gt; files to track the resources it creates back to resource definitions in your &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;*.tf&lt;/code&gt; files. Each deployment has its own state. State is stored according to the &lt;a href=&quot;https://www.terraform.io/docs/configuration/blocks/backends/index.html&quot;&gt;backend&lt;/a&gt; configured for the deployment. Terraform uses a &lt;a href=&quot;https://www.terraform.io/docs/backends/types/local.html&quot;&gt;local backend&lt;/a&gt; for storing state on the local filesystem by default, which is what we’ve been using for &lt;a href=&quot;/2021/01/17/part-1-organizing-terragrunt.html&quot;&gt;part 1&lt;/a&gt; and &lt;a href=&quot;/tf-skeleton/2021/01/23/part-2-variables.html&quot;&gt;part 2&lt;/a&gt; of the &lt;a href=&quot;/series/tf-skeleton.html&quot;&gt;terraform skeleton series&lt;/a&gt;.&lt;sup id=&quot;fnref:1&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:1&quot; class=&quot;footnote&quot;&gt;1&lt;/a&gt;&lt;/sup&gt; This works fine for a simple demonstration but is insufficient for production use because:&lt;/p&gt;
 
 &lt;ol&gt;
   &lt;li&gt;You can only run terraform commands on your deployments from that one machine&lt;/li&gt;
