@@ -1,4 +1,373 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.9.0">Jekyll</generator><link href="https://thirstydeveloper.io/feed.xml" rel="self" type="application/atom+xml" /><link href="https://thirstydeveloper.io/" rel="alternate" type="text/html" /><updated>2021-02-15T12:37:39+00:00</updated><id>https://thirstydeveloper.io/feed.xml</id><title type="html">thirstydeveloper</title><subtitle>Infrastructure-as-Code-as-a-Team</subtitle><author><name>Chris Kent</name></author><entry><title type="html">Terraform Skeleton Part 4: Backend Role</title><link href="https://thirstydeveloper.io/tf-skeleton/2021/02/10/part-4-backend-role.html" rel="alternate" type="text/html" title="Terraform Skeleton Part 4: Backend Role" /><published>2021-02-10T22:30:00+00:00</published><updated>2021-02-10T22:30:00+00:00</updated><id>https://thirstydeveloper.io/tf-skeleton/2021/02/10/part-4-backend-role</id><content type="html" xml:base="https://thirstydeveloper.io/tf-skeleton/2021/02/10/part-4-backend-role.html">&lt;p&gt;The &lt;a href=&quot;/tf-skeleton/2021/01/28/part-3-aws-backend.html&quot;&gt;previous entry&lt;/a&gt; enhanced the &lt;a href=&quot;/series/tf-skeleton.html&quot;&gt;terraform skeleton&lt;/a&gt; with remote state storage using AWS S3 and DynamoDB. Access to the state was granted based on whatever AWS credentials were configured in the shell at the time terraform was executed.&lt;/p&gt;
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.9.0">Jekyll</generator><link href="https://thirstydeveloper.io/feed.xml" rel="self" type="application/atom+xml" /><link href="https://thirstydeveloper.io/" rel="alternate" type="text/html" /><updated>2021-02-17T12:25:40+00:00</updated><id>https://thirstydeveloper.io/feed.xml</id><title type="html">thirstydeveloper</title><subtitle>Infrastructure-as-Code-as-a-Team</subtitle><author><name>Chris Kent</name></author><entry><title type="html">Terraform Skeleton Part 5: Remote State with CloudFormation</title><link href="https://thirstydeveloper.io/tf-skeleton/2021/02/17/part-5-cfn-terraform-state.html" rel="alternate" type="text/html" title="Terraform Skeleton Part 5: Remote State with CloudFormation" /><published>2021-02-17T12:20:00+00:00</published><updated>2021-02-17T12:20:00+00:00</updated><id>https://thirstydeveloper.io/tf-skeleton/2021/02/17/part-5-cfn-terraform-state</id><content type="html" xml:base="https://thirstydeveloper.io/tf-skeleton/2021/02/17/part-5-cfn-terraform-state.html">&lt;p&gt;&lt;a href=&quot;/tf-skeleton/2021/01/28/part-3-aws-backend.html&quot;&gt;Part 3&lt;/a&gt; showed us Terraform requires some infrastructure itself to store remote state and discussed some &lt;a href=&quot;/tf-skeleton/2021/01/28/part-3-aws-backend.html#limitations&quot;&gt;limitations&lt;/a&gt; of using Terragrunt to manage the creation of that infrastructure. In &lt;a href=&quot;/tf-skeleton/2021/02/10/part-4-backend-role.html&quot;&gt;part 4&lt;/a&gt;, we introduced more operational infrastructure for Terraform and &lt;a href=&quot;/tf-skeleton/2021/02/10/part-4-backend-role.html#admin-account-cloudformation-template&quot;&gt;began managing that infrastructure with CloudFormation&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;Today, we’ll continue down the path of using CloudFormation to store operational Terraform infrastructure. Achieving a clean separation between the infrastructure Terraform needs to run and the infrastructure Terraform manages opens up additional possibilities for locking down the Terraform state.&lt;/p&gt;
+
+&lt;p&gt;We’ll make use of &lt;a href=&quot;https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/resource-import.html&quot;&gt;CloudFormation’s import feature&lt;/a&gt; to bring the state bucket and lock table Terragrunt created for us under CloudFormation’s control for a seamless transition of ownership.&lt;/p&gt;
+
+&lt;h1 id=&quot;goals&quot;&gt;Goals&lt;/h1&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Control all Terraform operational infrastructure with CloudFormation&lt;/li&gt;
+  &lt;li&gt;Import existing operational infrastructure (buckets, tables) into CloudFormation&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;If you prefer to jump to the end, the code implementing this post’s final result is available on branch &lt;a href=&quot;https://github.com/thirstydeveloper/terraform-terragrunt-skeleton/tree/release/1.4&quot;&gt;release/1.4&lt;/a&gt; on GitHub. Additionally, you can &lt;a href=&quot;https://github.com/thirstydeveloper/terraform-terragrunt-skeleton/compare/release/1.3...release/1.4&quot;&gt;view the diffs from part 4&lt;/a&gt;, if that’s more your speed.&lt;/p&gt;
+
+&lt;h1 id=&quot;define-operational-infrastructure-with-cloudformation&quot;&gt;Define Operational Infrastructure with CloudFormation&lt;/h1&gt;
+
+&lt;p&gt;There are three items we need to import into CloudFormation:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;The state S3 bucket&lt;/li&gt;
+  &lt;li&gt;The log S3 bucket&lt;/li&gt;
+  &lt;li&gt;The DynamoDB lock table&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;The first step is to define these resources in a CloudFormation template. We’ll add resource definitions to the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;init-admin-account.cf.yml&lt;/code&gt; template &lt;a href=&quot;/tf-skeleton/2021/02/10/part-4-backend-role.html#admin-account-cloudformation-template&quot;&gt;we created in part 4&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;If you prefer, you can &lt;a href=&quot;https://github.com/thirstydeveloper/terraform-terragrunt-skeleton/compare/release/1.3...release/1.4#diff-cc93827adede14cb1e69dde0ed0769a47014bbb00f7ec444c61b927f3901c35a&quot;&gt;view the diffs&lt;/a&gt; on the CloudFormation template from part 4.&lt;/p&gt;
+
+&lt;p&gt;First up, the state bucket. Add an &lt;a href=&quot;https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-s3-bucket.html&quot;&gt;AWS::S3::Bucket&lt;/a&gt; resource to the CloudFormation template for our state bucket under the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Resources&lt;/code&gt; block:&lt;/p&gt;
+
+&lt;div class=&quot;language-yaml highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;na&quot;&gt;TerraformStateBucket&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;Type&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;AWS::S3::Bucket'&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;DeletionPolicy&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Retain&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;UpdateReplacePolicy&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Retain&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;Properties&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;BucketName&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;!Ref&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;StateBucketName&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;BucketEncryption&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;ServerSideEncryptionConfiguration&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+        &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;ServerSideEncryptionByDefault&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+            &lt;span class=&quot;na&quot;&gt;SSEAlgorithm&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;aws:kms&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;LoggingConfiguration&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;DestinationBucketName&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;!Ref&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;StateLogBucketName&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;LogFilePrefix&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;TFStateLogs/&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;PublicAccessBlockConfiguration&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;BlockPublicAcls&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;True&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;BlockPublicPolicy&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;True&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;IgnorePublicAcls&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;True&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;RestrictPublicBuckets&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;True&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;VersioningConfiguration&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+      &lt;span class=&quot;na&quot;&gt;Status&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Enabled&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The properties above match what Terragrunt used &lt;a href=&quot;/tf-skeleton/2021/01/28/part-3-aws-backend.html#backend-configuration-with-terragrunt&quot;&gt;when it created the state bucket in part 3&lt;/a&gt;. Note that we’re also using the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;StateBucketName&lt;/code&gt; and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;StateLogBucketName&lt;/code&gt; &lt;a href=&quot;/tf-skeleton/2021/02/10/part-4-backend-role.html#admin-account-cloudformation-template&quot;&gt;parameters we added in part 4&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;CloudFormation &lt;a href=&quot;https://docs.amazonaws.cn/en_us/AWSCloudFormation/latest/UserGuide/resource-import-existing-stack.html&quot;&gt;requires the DeletionPolicy attribute&lt;/a&gt; for any resources it will import, and it is a good safety measure in general.&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-attribute-updatereplacepolicy.html&quot;&gt;UpdateReplacePolicy&lt;/a&gt; is also set. Although not required, it is needed to make our &lt;a href=&quot;/tf-skeleton/2021/02/10/part-4-backend-role.html#preparation&quot;&gt;CloudFormation linter pre-commit hook&lt;/a&gt; happy.&lt;sup id=&quot;fnref:1&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:1&quot; class=&quot;footnote&quot;&gt;1&lt;/a&gt;&lt;/sup&gt;&lt;/p&gt;
+
+&lt;p&gt;Next, we’ll tackle the log bucket. Add the following to the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Resources&lt;/code&gt; block:&lt;/p&gt;
+
+&lt;div class=&quot;language-yaml highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;na&quot;&gt;TerraformStateLogBucket&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;Type&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;AWS::S3::Bucket'&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;DeletionPolicy&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Retain&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;UpdateReplacePolicy&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Retain&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;Properties&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;BucketName&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;!Ref&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;StateLogBucketName&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;AccessControl&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;LogDeliveryWrite&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Finally, we have the lock table:&lt;/p&gt;
+
+&lt;div class=&quot;language-yaml highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;na&quot;&gt;TerraformStateLockTable&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;Type&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;AWS::DynamoDB::Table'&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;DeletionPolicy&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Retain&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;UpdateReplacePolicy&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;Retain&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;Properties&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;TableName&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;!Ref&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;LockTableName&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;AttributeDefinitions&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;AttributeName&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;LockID&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;AttributeType&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;S&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;KeySchema&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+      &lt;span class=&quot;pi&quot;&gt;-&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;AttributeName&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;LockID&lt;/span&gt;
+        &lt;span class=&quot;na&quot;&gt;KeyType&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;HASH&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;BillingMode&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;PAY_PER_REQUEST&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;If you’re starting fresh, and Terragrunt hasn’t already created the state bucket, log bucket, and lock table for you, you can skip the next section on importing and run the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;make init-admin&lt;/code&gt; target we created in &lt;a href=&quot;/tf-skeleton/2021/01/28/part-3-aws-backend.html&quot;&gt;part 3&lt;/a&gt; to deploy your stack. Otherwise, continue on to import the resources Terragrunt created for you.&lt;/p&gt;
+
+&lt;h1 id=&quot;import-operational-infrastructure-into-cloudformation&quot;&gt;Import Operational Infrastructure into CloudFormation&lt;/h1&gt;
+
+&lt;p&gt;While you can use the AWS management console to import the resources, I prefer to work from the command line, but the commands to do so aren’t straightforward. We’ll add some targets to our Makefile in an attempt to simplify.&lt;/p&gt;
+
+&lt;p&gt;For a clean import, we need the following capabilities in our Makefile:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;Use &lt;a href=&quot;https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-stack-drift.html&quot;&gt;CloudFormation Drift Detection&lt;/a&gt; to ensure our stack is up-to-date and our resource definitions match what Terragrunt created&lt;/li&gt;
+  &lt;li&gt;Create a &lt;a href=&quot;https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-updating-stacks-changesets.html&quot;&gt;CloudFormation change set&lt;/a&gt; to import the resources and show us what CloudFormation intends to do&lt;/li&gt;
+  &lt;li&gt;Execute the change set to import the resources&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;If you prefer to jump to the end, &lt;a href=&quot;https://github.com/thirstydeveloper/terraform-terragrunt-skeleton/blob/release/1.4/Makefile&quot;&gt;here’s the resulting Makefile&lt;/a&gt;, and here are &lt;a href=&quot;https://github.com/thirstydeveloper/terraform-terragrunt-skeleton/compare/release/1.3...release/1.4#diff-76ed074a9305c04054cdebb9e9aad2d818052b07091de1f20cad0bbac34ffb52&quot;&gt;the diffs from part 4&lt;/a&gt;.&lt;/p&gt;
+
+&lt;h2 id=&quot;check-for-drift&quot;&gt;Check for Drift&lt;/h2&gt;
+
+&lt;p&gt;The first step in the import process is to verify that the stack we will be importing into has no drift, i.e., it has no other unapplied changes. The CloudFormation API uses separate calls to &lt;a href=&quot;https://docs.aws.amazon.com/cli/latest/reference/cloudformation/detect-stack-drift.html&quot;&gt;start a drift detection job&lt;/a&gt; and &lt;a href=&quot;https://docs.aws.amazon.com/cli/latest/reference/cloudformation/describe-stack-drift-detection-status.html&quot;&gt;check the status of a drift detection job&lt;/a&gt;. We’ll add some helper functions to our Makefile to wrap these calls:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;define wait_cfn_drift_detect_job
+	@while [[ \
+		&quot;$$($(CFN_STATUS_DRIFT_DETECTION) $(1) | jq -r .DetectionStatus)&quot; == \
+		&quot;DETECTION_IN_PROGRESS&quot; \
+	]]; do \
+		echo &quot;Detection in progress. Waiting 3 seconds...&quot;; \
+		sleep 3; \
+	done
+endef
+
+define show_cfn_drift
+	$(eval DRIFT_ID=$(shell $(CFN_START_DRIFT_DETECTION) $(1) \
+		| jq -r .StackDriftDetectionId))
+	$(call wait_cfn_drift_detect_job,${DRIFT_ID})
+	@$(CFN_STATUS_DRIFT_DETECTION) $(DRIFT_ID) | jq '{ \
+		DetectionStatus, \
+		StackDriftStatus, \
+		DriftedStackResourceCount \
+	}'
+endef
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Next, add a make target to perform the drift detection:&lt;/p&gt;
+
+&lt;div class=&quot;language-make highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nl&quot;&gt;.PHONY&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;check-init-admin-drift&lt;/span&gt;
+&lt;span class=&quot;nl&quot;&gt;check-init-admin-drift&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;
+	&lt;span class=&quot;nf&quot;&gt;$(&lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;call&lt;/span&gt; show_cfn_drift,&lt;span class=&quot;nv&quot;&gt;${ADMIN_INIT_STACK_NAME}&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;)&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Execute drift detection with:&lt;/p&gt;
+
+&lt;div class=&quot;language-bash highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;➜ make check-init-admin-drift
+Detection &lt;span class=&quot;k&quot;&gt;in &lt;/span&gt;progress. Waiting 3 seconds...
+&lt;span class=&quot;o&quot;&gt;{&lt;/span&gt;
+  &lt;span class=&quot;s2&quot;&gt;&quot;DetectionStatus&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;DETECTION_COMPLETE&quot;&lt;/span&gt;,
+  &lt;span class=&quot;s2&quot;&gt;&quot;StackDriftStatus&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;IN_SYNC&quot;&lt;/span&gt;,
+  &lt;span class=&quot;s2&quot;&gt;&quot;DriftedStackResourceCount&quot;&lt;/span&gt;: 0
+&lt;span class=&quot;o&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;If you get a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;StackDriftStatus&lt;/code&gt; other than &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;IN_SYNC&lt;/code&gt;, adjust your CloudFormation template to resolve, and verify using the drift check. Once you’re &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;IN_SYNC&lt;/code&gt;, create the import change set as follows.&lt;/p&gt;
+
+&lt;h2 id=&quot;create-import-changeset&quot;&gt;Create Import Changeset&lt;/h2&gt;
+
+&lt;p&gt;Creating the import change set requires a CloudFormation template and information about the resources to import, including:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;The resource type&lt;/li&gt;
+  &lt;li&gt;The logical name of the resource in your template&lt;/li&gt;
+  &lt;li&gt;The unique identifier for that resource in AWS&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;For instance, our CloudFormation template defines the state bucket with:&lt;/p&gt;
+
+&lt;div class=&quot;language-yaml highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;na&quot;&gt;Resources&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;na&quot;&gt;TerraformStateLogBucket&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt;
+    &lt;span class=&quot;na&quot;&gt;Type&lt;/span&gt;&lt;span class=&quot;pi&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s1&quot;&gt;'&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;AWS::S3::Bucket'&lt;/span&gt;
+    &lt;span class=&quot;s&quot;&gt;...&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;which means the resource type is &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;AWS::S3::Bucket&lt;/code&gt;, and the logical name is &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TerraformStateLogBucket&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;The unique identifier depends on the resource type. For an S3 bucket, it’s the bucket name. For a DynamoDB table, it’s the table name.&lt;/p&gt;
+
+&lt;p&gt;Below is a make target for creating the import change set:&lt;/p&gt;
+
+&lt;div class=&quot;language-make highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nl&quot;&gt;import-terragrunt-changeset.json&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;
+	&lt;span class=&quot;p&quot;&gt;@&lt;/span&gt;aws cloudformation create-change-set &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--stack-name&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;${ADMIN_INIT_STACK_NAME}&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--change-set-name&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;${ADMIN_INIT_STACK_NAME}&lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;-import-terragrunt&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--change-set-type&lt;/span&gt; IMPORT &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--template-body&lt;/span&gt; file://init/admin/init-admin-account.cf.yml &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--capabilities&lt;/span&gt; CAPABILITY_NAMED_IAM &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--parameters&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+			&lt;span class=&quot;nv&quot;&gt;ParameterKey&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;AdminAccountId,UsePreviousValue&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;True &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+			&lt;span class=&quot;nv&quot;&gt;ParameterKey&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;StateBucketName,UsePreviousValue&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;True &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+			&lt;span class=&quot;nv&quot;&gt;ParameterKey&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;StateLogBucketName,UsePreviousValue&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;True &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+			&lt;span class=&quot;nv&quot;&gt;ParameterKey&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;LockTableName,UsePreviousValue&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;True &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--resources-to-import&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&quot;[ &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+			{ &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+				&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;ResourceType&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;AWS::S3::Bucket&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;, &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+				&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;LogicalResourceId&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;TerraformStateBucket&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;, &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+				&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;ResourceIdentifier&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;: { &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+					&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;BucketName&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;: &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;${STATE_BUCKET_NAME}&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt; &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+				} &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+			}, &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+			{ &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+				&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;ResourceType&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;AWS::S3::Bucket&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;, &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+				&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;LogicalResourceId&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;TerraformStateLogBucket&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;, &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+				&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;ResourceIdentifier&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;: { &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+					&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;BucketName&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;: &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;${STATE_LOG_BUCKET_NAME}&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt; &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+				} &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+			}, &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+			{ &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+			&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;ResourceType&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;AWS::DynamoDB::Table&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;, &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+				&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;LogicalResourceId&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;TerraformStateLockTable&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;, &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+				&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;ResourceIdentifier&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;: { &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+					&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;TableName&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;: &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;nv&quot;&gt;${LOCK_TABLE_NAME}&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&quot;&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt; &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+				} &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+			} &lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;
+		]&quot;&lt;/span&gt; | &lt;span class=&quot;nb&quot;&gt;tee &lt;/span&gt;import-terragrunt-changeset.json
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;CloudFormation assigns each change set a unique ID needed for describing, executing, or discarding the change set with subsequent API calls. The &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;import-terragrunt-changeset.json&lt;/code&gt; stores the change set identifier in a JSON file for our other make targets to consume.&lt;/p&gt;
+
+&lt;p&gt;Next, we want a target for describing the created change set so we can see what modifications it will make:&lt;/p&gt;
+
+&lt;div class=&quot;language-make highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nl&quot;&gt;.PHONY&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;prepare-cfn-import-terragrunt&lt;/span&gt;
+&lt;span class=&quot;nl&quot;&gt;prepare-cfn-import-terragrunt&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;import-terragrunt-changeset.json&lt;/span&gt;
+	&lt;span class=&quot;nf&quot;&gt;$(&lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;eval&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;CHANGE_SET_ID&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;$(&lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;shell&lt;/span&gt; jq &lt;span class=&quot;nt&quot;&gt;-r&lt;/span&gt; .Id import-terragrunt-changeset.json&lt;span class=&quot;nf&quot;&gt;))&lt;/span&gt;
+	aws cloudformation &lt;span class=&quot;nb&quot;&gt;wait &lt;/span&gt;change-set-create-complete &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--change-set-name&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;${CHANGE_SET_ID}&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--stack-name&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;${ADMIN_INIT_STACK_NAME}&lt;/span&gt;
+	&lt;span class=&quot;p&quot;&gt;@&lt;/span&gt;aws cloudformation describe-change-set &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--change-set-name&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;${CHANGE_SET_ID}&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--stack-name&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;${ADMIN_INIT_STACK_NAME}&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		| jq &lt;span class=&quot;s1&quot;&gt;'{ Changes, Status, StatusReason }'&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;prepare-cfn-import-terragrunt&lt;/code&gt; target depends on &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;import-terragrunt-changeset.json&lt;/code&gt; to create the change set and communicate its unique id, then describes it once the change set finishes creating.&lt;/p&gt;
+
+&lt;p&gt;At this point, we’ll add another target for discarding the change set, in case we don’t like what we see with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;prepare-cfn-import-terragrunt&lt;/code&gt;:&lt;/p&gt;
+
+&lt;div class=&quot;language-make highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nl&quot;&gt;.PHONY&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;discard-cfn-import-terragrunt&lt;/span&gt;
+&lt;span class=&quot;nl&quot;&gt;discard-cfn-import-terragrunt&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;import-terragrunt-changeset.json&lt;/span&gt;
+	&lt;span class=&quot;nf&quot;&gt;$(&lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;eval&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;CHANGE_SET_ID&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;$(&lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;shell&lt;/span&gt; jq &lt;span class=&quot;nt&quot;&gt;-r&lt;/span&gt; .Id import-terragrunt-changeset.json&lt;span class=&quot;nf&quot;&gt;))&lt;/span&gt;
+	aws cloudformation delete-change-set &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--change-set-name&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;${CHANGE_SET_ID}&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--stack-name&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;${ADMIN_INIT_STACK_NAME}&lt;/span&gt;
+	&lt;span class=&quot;p&quot;&gt;@&lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;rm &lt;/span&gt;import-terragrunt-changeset.json
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Let’s add a conventional &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;clean&lt;/code&gt; target too:&lt;/p&gt;
+
+&lt;div class=&quot;language-make highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nl&quot;&gt;.PHONY&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;clean&lt;/span&gt;
+&lt;span class=&quot;nl&quot;&gt;clean&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;
+	&lt;span class=&quot;nb&quot;&gt;rm &lt;/span&gt;import-terragrunt-changeset.json
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Now, let’s use our targets to create and describe the change set:&lt;/p&gt;
+
+&lt;div class=&quot;language-bash highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;➜ make prepare-cfn-import-terragrunt
+&lt;span class=&quot;o&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;s2&quot;&gt;&quot;Id&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;arn:aws:cloudformation:us-east-1:&amp;lt;omitted&amp;gt;:changeSet/tf-admin-init-import-terragrunt/179b1efd-2961-48af-95c2-6f45b96a9925&quot;&lt;/span&gt;,
+    &lt;span class=&quot;s2&quot;&gt;&quot;StackId&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;arn:aws:cloudformation:us-east-1:&amp;lt;omitted&amp;gt;:stack/tf-admin-init/8704b070-5f61-11eb-9ff1-0eea077046db&quot;&lt;/span&gt;
+&lt;span class=&quot;o&quot;&gt;}&lt;/span&gt;
+aws cloudformation &lt;span class=&quot;nb&quot;&gt;wait &lt;/span&gt;change-set-create-complete &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--change-set-name&lt;/span&gt; arn:aws:cloudformation:us-east-1:&amp;lt;omitted&amp;gt;:changeSet/tf-admin-init-import-terragrunt/179b1efd-2961-48af-95c2-6f45b96a9925 &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--stack-name&lt;/span&gt; tf-admin-init
+&lt;span class=&quot;o&quot;&gt;{&lt;/span&gt;
+  &lt;span class=&quot;s2&quot;&gt;&quot;Changes&quot;&lt;/span&gt;: &lt;span class=&quot;o&quot;&gt;[&lt;/span&gt;
+    &lt;span class=&quot;o&quot;&gt;{&lt;/span&gt;
+      &lt;span class=&quot;s2&quot;&gt;&quot;Type&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;Resource&quot;&lt;/span&gt;,
+      &lt;span class=&quot;s2&quot;&gt;&quot;ResourceChange&quot;&lt;/span&gt;: &lt;span class=&quot;o&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;s2&quot;&gt;&quot;Action&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;Import&quot;&lt;/span&gt;,
+        &lt;span class=&quot;s2&quot;&gt;&quot;LogicalResourceId&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;TerraformStateBucket&quot;&lt;/span&gt;,
+        &lt;span class=&quot;s2&quot;&gt;&quot;PhysicalResourceId&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;terraform-skeleton-state&quot;&lt;/span&gt;,
+        &lt;span class=&quot;s2&quot;&gt;&quot;ResourceType&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;AWS::S3::Bucket&quot;&lt;/span&gt;,
+        &lt;span class=&quot;s2&quot;&gt;&quot;Scope&quot;&lt;/span&gt;: &lt;span class=&quot;o&quot;&gt;[]&lt;/span&gt;,
+        &lt;span class=&quot;s2&quot;&gt;&quot;Details&quot;&lt;/span&gt;: &lt;span class=&quot;o&quot;&gt;[]&lt;/span&gt;
+      &lt;span class=&quot;o&quot;&gt;}&lt;/span&gt;
+    &lt;span class=&quot;o&quot;&gt;}&lt;/span&gt;,
+    &lt;span class=&quot;o&quot;&gt;{&lt;/span&gt;
+      &lt;span class=&quot;s2&quot;&gt;&quot;Type&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;Resource&quot;&lt;/span&gt;,
+      &lt;span class=&quot;s2&quot;&gt;&quot;ResourceChange&quot;&lt;/span&gt;: &lt;span class=&quot;o&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;s2&quot;&gt;&quot;Action&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;Import&quot;&lt;/span&gt;,
+        &lt;span class=&quot;s2&quot;&gt;&quot;LogicalResourceId&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;TerraformStateLockTable&quot;&lt;/span&gt;,
+        &lt;span class=&quot;s2&quot;&gt;&quot;PhysicalResourceId&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;terraform-skeleton-state-locks&quot;&lt;/span&gt;,
+        &lt;span class=&quot;s2&quot;&gt;&quot;ResourceType&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;AWS::DynamoDB::Table&quot;&lt;/span&gt;,
+        &lt;span class=&quot;s2&quot;&gt;&quot;Scope&quot;&lt;/span&gt;: &lt;span class=&quot;o&quot;&gt;[]&lt;/span&gt;,
+        &lt;span class=&quot;s2&quot;&gt;&quot;Details&quot;&lt;/span&gt;: &lt;span class=&quot;o&quot;&gt;[]&lt;/span&gt;
+      &lt;span class=&quot;o&quot;&gt;}&lt;/span&gt;
+    &lt;span class=&quot;o&quot;&gt;}&lt;/span&gt;,
+    &lt;span class=&quot;o&quot;&gt;{&lt;/span&gt;
+      &lt;span class=&quot;s2&quot;&gt;&quot;Type&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;Resource&quot;&lt;/span&gt;,
+      &lt;span class=&quot;s2&quot;&gt;&quot;ResourceChange&quot;&lt;/span&gt;: &lt;span class=&quot;o&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;s2&quot;&gt;&quot;Action&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;Import&quot;&lt;/span&gt;,
+        &lt;span class=&quot;s2&quot;&gt;&quot;LogicalResourceId&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;TerraformStateLogBucket&quot;&lt;/span&gt;,
+        &lt;span class=&quot;s2&quot;&gt;&quot;PhysicalResourceId&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;terraform-skeleton-state-logs&quot;&lt;/span&gt;,
+        &lt;span class=&quot;s2&quot;&gt;&quot;ResourceType&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;AWS::S3::Bucket&quot;&lt;/span&gt;,
+        &lt;span class=&quot;s2&quot;&gt;&quot;Scope&quot;&lt;/span&gt;: &lt;span class=&quot;o&quot;&gt;[]&lt;/span&gt;,
+        &lt;span class=&quot;s2&quot;&gt;&quot;Details&quot;&lt;/span&gt;: &lt;span class=&quot;o&quot;&gt;[]&lt;/span&gt;
+      &lt;span class=&quot;o&quot;&gt;}&lt;/span&gt;
+    &lt;span class=&quot;o&quot;&gt;}&lt;/span&gt;
+  &lt;span class=&quot;o&quot;&gt;]&lt;/span&gt;,
+  &lt;span class=&quot;s2&quot;&gt;&quot;Status&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;CREATE_COMPLETE&quot;&lt;/span&gt;,
+  &lt;span class=&quot;s2&quot;&gt;&quot;StatusReason&quot;&lt;/span&gt;: null
+&lt;span class=&quot;o&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Our describe command should show three &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Import&lt;/code&gt; actions occurring in the change list with no other changes. If you see any other actions, it means your template contains unapplied changes, and you’ll want to address those first.&lt;/p&gt;
+
+&lt;h2 id=&quot;execute-import&quot;&gt;Execute Import&lt;/h2&gt;
+
+&lt;p&gt;Having created the import change set and verified the actions it staged, we’ll now add a target for executing it:&lt;/p&gt;
+
+&lt;div class=&quot;language-make highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nl&quot;&gt;.PHONY&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;cfn-import-terragrunt&lt;/span&gt;
+&lt;span class=&quot;nl&quot;&gt;cfn-import-terragrunt&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;import-terragrunt-changeset.json&lt;/span&gt;
+	&lt;span class=&quot;nf&quot;&gt;$(&lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;eval&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;CHANGE_SET_ID&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;=&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;$(&lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;shell&lt;/span&gt; jq &lt;span class=&quot;nt&quot;&gt;-r&lt;/span&gt; .Id import-terragrunt-changeset.json&lt;span class=&quot;nf&quot;&gt;))&lt;/span&gt;
+	aws cloudformation &lt;span class=&quot;nb&quot;&gt;wait &lt;/span&gt;change-set-create-complete &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--change-set-name&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;${CHANGE_SET_ID}&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--stack-name&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;${ADMIN_INIT_STACK_NAME}&lt;/span&gt;
+	aws cloudformation execute-change-set &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--change-set-name&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;${CHANGE_SET_ID}&lt;/span&gt; &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--stack-name&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;${ADMIN_INIT_STACK_NAME}&lt;/span&gt;
+	&lt;span class=&quot;p&quot;&gt;@&lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;rm &lt;/span&gt;import-terragrunt-changeset.json
+	aws cloudformation &lt;span class=&quot;nb&quot;&gt;wait &lt;/span&gt;stack-import-complete &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--stack-name&lt;/span&gt; &lt;span class=&quot;nv&quot;&gt;${ADMIN_INIT_STACK_NAME}&lt;/span&gt;
+	&lt;span class=&quot;nf&quot;&gt;$(&lt;/span&gt;&lt;span class=&quot;nb&quot;&gt;call&lt;/span&gt; show_cfn_drift,&lt;span class=&quot;nv&quot;&gt;${ADMIN_INIT_STACK_NAME}&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;)&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Execute the import with:&lt;/p&gt;
+
+&lt;div class=&quot;language-bash highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;➜ make cfn-import-terragrunt
+aws cloudformation &lt;span class=&quot;nb&quot;&gt;wait &lt;/span&gt;change-set-create-complete &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--change-set-name&lt;/span&gt; arn:aws:cloudformation:us-east-1:&amp;lt;omitted&amp;gt;:changeSet/tf-admin-init-import-terragrunt/179b1efd-2961-48af-95c2-6f45b96a9925 &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--stack-name&lt;/span&gt; tf-admin-init
+aws cloudformation execute-change-set &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--change-set-name&lt;/span&gt; arn:aws:cloudformation:us-east-1:&amp;lt;omitted&amp;gt;:changeSet/tf-admin-init-import-terragrunt/179b1efd-2961-48af-95c2-6f45b96a9925 &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--stack-name&lt;/span&gt; tf-admin-init
+aws cloudformation &lt;span class=&quot;nb&quot;&gt;wait &lt;/span&gt;stack-import-complete &lt;span class=&quot;se&quot;&gt;\&lt;/span&gt;
+		&lt;span class=&quot;nt&quot;&gt;--stack-name&lt;/span&gt; tf-admin-init
+&lt;span class=&quot;o&quot;&gt;{&lt;/span&gt;
+  &lt;span class=&quot;s2&quot;&gt;&quot;DetectionStatus&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;DETECTION_COMPLETE&quot;&lt;/span&gt;,
+  &lt;span class=&quot;s2&quot;&gt;&quot;StackDriftStatus&quot;&lt;/span&gt;: &lt;span class=&quot;s2&quot;&gt;&quot;IN_SYNC&quot;&lt;/span&gt;,
+  &lt;span class=&quot;s2&quot;&gt;&quot;DriftedStackResourceCount&quot;&lt;/span&gt;: 0
+&lt;span class=&quot;o&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;At the end of the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;cfn-import-terragrunt&lt;/code&gt; target, we call our &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;show_cfn_drift&lt;/code&gt; helper function to verify that the properties of the resources we imported match what we specified in our template. You should see &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;StackDriftStatus&lt;/code&gt; is &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;IN_SYNC&lt;/code&gt;, which means we’ve successfully imported the resources and the definitions for those resources in our template match reality.&lt;sup id=&quot;fnref:2&quot; role=&quot;doc-noteref&quot;&gt;&lt;a href=&quot;#fn:2&quot; class=&quot;footnote&quot;&gt;2&lt;/a&gt;&lt;/sup&gt;&lt;/p&gt;
+
+&lt;h1 id=&quot;whats-next&quot;&gt;What’s Next&lt;/h1&gt;
+
+&lt;p&gt;We’ve now fully separated the creation of operational infrastructure required to run Terraform from the infrastructure Terraform manages. Creating the operational infrastructure with CloudFormation has numerous benefits. We can now harden our state bucket, log bucket, and lock table in ways that were not available to us with Terragrunt managing their creation. We’ll tackle such hardening in upcoming posts.&lt;/p&gt;
+
+&lt;h1 id=&quot;footnotes&quot;&gt;Footnotes&lt;/h1&gt;
+
+&lt;div class=&quot;footnotes&quot; role=&quot;doc-endnotes&quot;&gt;
+  &lt;ol&gt;
+    &lt;li id=&quot;fn:1&quot; role=&quot;doc-endnote&quot;&gt;
+
+      &lt;p&gt;If you omit &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;UpdateReplacePolicy&lt;/code&gt;, the linter will report something like:&lt;/p&gt;
+
+      &lt;blockquote&gt;
+        &lt;p&gt;W3011 Both UpdateReplacePolicy and DeletionPolicy are needed to protect Resources/TerraformStateBucket from deletion&lt;/p&gt;
+      &lt;/blockquote&gt;
+      &lt;p&gt;&lt;a href=&quot;#fnref:1&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+    &lt;li id=&quot;fn:2&quot; role=&quot;doc-endnote&quot;&gt;
+
+      &lt;p&gt;If you see that there is drift after executing the import change set, the resources you imported have a different configuration than what you specified in your template. For instance, maybe your template specified a bucket is KMS encrypted when in reality, the bucket is AES-256 encrypted. Drift detection will report such differences. To resolve the drift:&lt;/p&gt;
+
+      &lt;ol&gt;
+        &lt;li&gt;Decide whether the drift is appropriate and should be retained&lt;/li&gt;
+        &lt;li&gt;Modify the template to match any appropriate drift&lt;/li&gt;
+        &lt;li&gt;Create a change set on the stack with the updated template&lt;/li&gt;
+        &lt;li&gt;Verify the change set reports it will discard the inappropriate drift (or have no changes if there was no inappropriate drift)&lt;/li&gt;
+        &lt;li&gt;Execute the change set&lt;/li&gt;
+      &lt;/ol&gt;
+      &lt;p&gt;&lt;a href=&quot;#fnref:2&quot; class=&quot;reversefootnote&quot; role=&quot;doc-backlink&quot;&gt;&amp;#8617;&lt;/a&gt;&lt;/p&gt;
+    &lt;/li&gt;
+  &lt;/ol&gt;
+&lt;/div&gt;</content><author><name>Chris</name></author><category term="tf-skeleton" /><category term="terraform" /><category term="terragrunt" /><summary type="html">Part 3 showed us Terraform requires some infrastructure itself to store remote state and discussed some limitations of using Terragrunt to manage the creation of that infrastructure. In part 4, we introduced more operational infrastructure for Terraform and began managing that infrastructure with CloudFormation.</summary></entry><entry><title type="html">Terraform Skeleton Part 4: Backend Role</title><link href="https://thirstydeveloper.io/tf-skeleton/2021/02/10/part-4-backend-role.html" rel="alternate" type="text/html" title="Terraform Skeleton Part 4: Backend Role" /><published>2021-02-10T22:30:00+00:00</published><updated>2021-02-10T22:30:00+00:00</updated><id>https://thirstydeveloper.io/tf-skeleton/2021/02/10/part-4-backend-role</id><content type="html" xml:base="https://thirstydeveloper.io/tf-skeleton/2021/02/10/part-4-backend-role.html">&lt;p&gt;The &lt;a href=&quot;/tf-skeleton/2021/01/28/part-3-aws-backend.html&quot;&gt;previous entry&lt;/a&gt; enhanced the &lt;a href=&quot;/series/tf-skeleton.html&quot;&gt;terraform skeleton&lt;/a&gt; with remote state storage using AWS S3 and DynamoDB. Access to the state was granted based on whatever AWS credentials were configured in the shell at the time terraform was executed.&lt;/p&gt;
 
 &lt;p&gt;Terraform state is a highly sensitive resource. It is likely to contain lots of sensitive information including passwords and access tokens. Additionally, recovering from a lost state file means either recreating all the infrastructure that was in it, or spending some quality time running &lt;a href=&quot;https://www.terraform.io/docs/cli/import/index.html&quot;&gt;terraform import&lt;/a&gt; commands for resources that support it, and hand modifying state files for those that do not.&lt;/p&gt;
 
