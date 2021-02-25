@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1"><!-- Begin Jekyll SEO tag v2.6.1 -->
+<title>Terraform Skeleton Part 6: Protecting State | thirstydeveloper</title>
+<meta name="generator" content="Jekyll v3.9.0" />
+<meta property="og:title" content="Terraform Skeleton Part 6: Protecting State" />
+<meta name="author" content="Chris" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Part 5 moved Terraform’s operational infrastructure into a CloudFormation stack so that Terragrunt no longer manages the state bucket, lock table, and log bucket. Doing so offers us the opportunity to protect these resources in ways not supported by Terragrunt. We will capitalize on that opportunity today." />
+<meta property="og:description" content="Part 5 moved Terraform’s operational infrastructure into a CloudFormation stack so that Terragrunt no longer manages the state bucket, lock table, and log bucket. Doing so offers us the opportunity to protect these resources in ways not supported by Terragrunt. We will capitalize on that opportunity today." />
+<link rel="canonical" href="https://thirstydeveloper.io/tf-skeleton/2021/02/25/part-6-protecting-state.html" />
+<meta property="og:url" content="https://thirstydeveloper.io/tf-skeleton/2021/02/25/part-6-protecting-state.html" />
+<meta property="og:site_name" content="thirstydeveloper" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2021-02-25T19:00:00+00:00" />
+<script type="application/ld+json">
+{"description":"Part 5 moved Terraform’s operational infrastructure into a CloudFormation stack so that Terragrunt no longer manages the state bucket, lock table, and log bucket. Doing so offers us the opportunity to protect these resources in ways not supported by Terragrunt. We will capitalize on that opportunity today.","url":"https://thirstydeveloper.io/tf-skeleton/2021/02/25/part-6-protecting-state.html","@type":"BlogPosting","headline":"Terraform Skeleton Part 6: Protecting State","dateModified":"2021-02-25T19:00:00+00:00","datePublished":"2021-02-25T19:00:00+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://thirstydeveloper.io/tf-skeleton/2021/02/25/part-6-protecting-state.html"},"author":{"@type":"Person","name":"Chris"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+<link rel="stylesheet" href="/assets/main.css"><link type="application/atom+xml" rel="alternate" href="https://thirstydeveloper.io/feed.xml" title="thirstydeveloper" /><script>
+if(!(window.doNotTrack === "1" || navigator.doNotTrack === "1" || navigator.doNotTrack === "yes" || navigator.msDoNotTrack === "1")) {
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-108404407-1', 'auto');
+  ga('send', 'pageview');
+}
+</script>
+  
+</head>
+<body><header class="site-header" role="banner">
+
+  <div class="wrapper"><a class="site-title" rel="author" href="/">thirstydeveloper</a><nav class="site-nav">
+        <input type="checkbox" id="nav-trigger" class="nav-trigger" />
+        <label for="nav-trigger">
+          <span class="menu-icon">
+            <svg viewBox="0 0 18 15" width="18px" height="15px">
+              <path d="M18,1.484c0,0.82-0.665,1.484-1.484,1.484H1.484C0.665,2.969,0,2.304,0,1.484l0,0C0,0.665,0.665,0,1.484,0 h15.032C17.335,0,18,0.665,18,1.484L18,1.484z M18,7.516C18,8.335,17.335,9,16.516,9H1.484C0.665,9,0,8.335,0,7.516l0,0 c0-0.82,0.665-1.484,1.484-1.484h15.032C17.335,6.031,18,6.696,18,7.516L18,7.516z M18,13.516C18,14.335,17.335,15,16.516,15H1.484 C0.665,15,0,14.335,0,13.516l0,0c0-0.82,0.665-1.483,1.484-1.483h15.032C17.335,12.031,18,12.695,18,13.516L18,13.516z"/>
+            </svg>
+          </span>
+        </label>
+
+        <div class="trigger"><a class="page-link" href="/about/">About</a><a class="page-link" href="/series/tf-skeleton.html">Terraform Skeleton</a></div>
+      </nav></div>
+</header>
+<main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">Terraform Skeleton Part 6: Protecting State</h1>
+    <p class="post-meta"><time class="dt-published" datetime="2021-02-25T19:00:00+00:00" itemprop="datePublished">
+        Feb 25, 2021
+      </time>• 
+          <span itemprop="author" itemscope itemtype="http://schema.org/Person">
+            <span class="p-author h-card" itemprop="name">Chris</span></span>
+        <span class="post-series">
+          • Part of the <a href="/series/tf-skeleton">tf-skeleton series</a>
+        </span><br />
+        <span itemprop="drink"><span class="drink-icon" itemprop="name">🍷 </span><span class="h-card" itemprop="name"><a href="https://www.siduri.com/wines/willamette-valley-pinot-noir">Siduri Willamette Valley Pinot Noir 2018 </a></span><span class="h-card" itemprop="name">• <a href="https://www.wine.com/product/siduri-willamette-valley-pinot-noir-2018/596011">wine.com </a></span><br />
+          <span class="h-card" itemprop="name"></span>
+        </span></p>
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p><a href="/tf-skeleton/2021/02/17/part-5-cfn-terraform-state.html">Part 5</a> moved Terraform’s operational infrastructure <a href="https://github.com/thirstydeveloper/terraform-terragrunt-skeleton/compare/release/1.3...release/1.4#diff-cc93827adede14cb1e69dde0ed0769a47014bbb00f7ec444c61b927f3901c35a">into a CloudFormation stack</a> so that Terragrunt no longer manages the state bucket, lock table, and log bucket. Doing so offers us the opportunity to protect these resources in ways not supported by Terragrunt. We will capitalize on that opportunity today.</p>
+
+<p>We’ll cover adding a bucket policy to our CloudFormation template to restrict access to Terraform’s state, leveraging the backend role and <code class="language-plaintext highlighter-rouge">Terraformer</code> principal tag introduced in <a href="/tf-skeleton/2021/02/10/part-4-backend-role.html">Part 4</a>. I hope my example will ease your navigation of IAM policy syntax and save you the pain of decrypting unhelpful IAM error messages.</p>
+
+<p>We’ll also add some basic protections to the log bucket that Terragrunt fails to implement out of the box.</p>
+
+<h1 id="goals">Goals</h1>
+
+<ul>
+  <li>Grant only authorized principals access to Terraform state</li>
+  <li>Protect the log bucket in a similar fashion to the state bucket</li>
+  <li>Remove unnecessary permissions from the backend role</li>
+</ul>
+
+<p>If you prefer to jump to the end, the code implementing this post’s final result is available on branch <a href="https://github.com/thirstydeveloper/terraform-terragrunt-skeleton/tree/release/1.5">release/1.5</a> on GitHub. Additionally, you can <a href="https://github.com/thirstydeveloper/terraform-terragrunt-skeleton/compare/release/1.4...release/1.5">view the diffs from part 5</a>, if that’s more your speed.</p>
+
+<h1 id="access-roles">Access Roles</h1>
+
+<p>There are three types of authorized access to Terraform state we will cover today.</p>
+
+<p>First is our backend role, which the Terragrunt configures Terraform to use for all state operations via the <code class="language-plaintext highlighter-rouge">root.hcl</code> from <a href="/tf-skeleton/2021/02/10/part-4-backend-role.html">Part 4</a>, reprinted here:</p>
+
+<div class="language-hcl highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nx">remote_state</span> <span class="p">{</span>
+  <span class="nx">backend</span> <span class="p">=</span> <span class="s2">"s3"</span>
+  <span class="nx">generate</span> <span class="p">=</span> <span class="p">{</span>
+    <span class="nx">path</span>      <span class="p">=</span> <span class="s2">"backend.tf"</span>
+    <span class="nx">if_exists</span> <span class="p">=</span> <span class="s2">"overwrite"</span>
+  <span class="p">}</span>
+  <span class="nx">config</span> <span class="p">=</span> <span class="p">{</span>
+    <span class="nx">bucket</span>   <span class="p">=</span> <span class="s2">"terraform-skeleton-state"</span>
+    <span class="nx">region</span>   <span class="p">=</span> <span class="s2">"us-east-1"</span>
+    <span class="nx">encrypt</span>  <span class="p">=</span> <span class="kc">true</span>
+    <span class="nx">role_arn</span> <span class="p">=</span> <span class="s2">"arn:aws:iam::${get_aws_account_id()}:role/terraform/TerraformBackend"</span>
+
+    <span class="nx">key</span> <span class="p">=</span> <span class="s2">"${dirname(local.relative_deployment_path)}/${local.stack}.tfstate"</span>
+
+    <span class="nx">dynamodb_table</span>            <span class="p">=</span> <span class="s2">"terraform-skeleton-state-locks"</span>
+    <span class="nx">accesslogging_bucket_name</span> <span class="p">=</span> <span class="s2">"terraform-skeleton-state-logs"</span>
+  <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Second are humans, who may wish to interact with the state for any number of reasons. One example is changing the name of an existing stack (which in our setup will change the name of the state file).</p>
+
+<p>I like to differentiate between developer-level and administrative-level access to Terraform state, the primary difference being that only administrators should be allowed to delete state files <em>permanently</em>. Deleting a state file is not something to take lightly. If you delete one you still need by accident, and you have no backups, your only choice will be to reconstruct it by hand.</p>
+
+<p>The policy we implement today will grant:</p>
+
+<ul>
+  <li>Full access to administrative IAM users, including the AWS account’s root user</li>
+  <li>Limited access to developer IAM users and the backend role</li>
+  <li>Deny access to anyone else</li>
+</ul>
+
+<h1 id="state-bucket-policy">State Bucket Policy</h1>
+
+<p>We will use an S3 bucket policy to implement the above restrictions. An S3 bucket policy is an ideal choice for two reasons. First, it directly applies permissions to the resource we want to protect (the state bucket). Second, developers can likely create it themselves, unlike adding permissions to IAM users, something typically controlled by an enterprise team.</p>
+
+<p>We’ll add the bucket policy as a resource to our <code class="language-plaintext highlighter-rouge">init-admin-account.cf.yml</code> CloudFormation template. We’ll break the policy down statement by statement.</p>
+
+<p>The first statement requires TLS encryption for any requests accessing Terraform state. This policy Terragrunt creates for you; we preserve it here.</p>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  <span class="na">TerraformStateBucketPolicy</span><span class="pi">:</span>
+    <span class="na">Type</span><span class="pi">:</span> <span class="s1">'</span><span class="s">AWS::S3::BucketPolicy'</span>
+    <span class="na">DeletionPolicy</span><span class="pi">:</span> <span class="s">Retain</span>
+    <span class="na">UpdateReplacePolicy</span><span class="pi">:</span> <span class="s">Retain</span>
+    <span class="na">Properties</span><span class="pi">:</span>
+      <span class="na">Bucket</span><span class="pi">:</span> <span class="kt">!Ref</span> <span class="s">TerraformStateBucket</span>
+      <span class="na">PolicyDocument</span><span class="pi">:</span>
+        <span class="na">Version</span><span class="pi">:</span> <span class="s1">'</span><span class="s">2012-10-17'</span>
+        <span class="na">Statement</span><span class="pi">:</span>
+          <span class="pi">-</span> <span class="na">Sid</span><span class="pi">:</span> <span class="s1">'</span><span class="s">AllowTLSRequestsOnly'</span>
+            <span class="na">Principal</span><span class="pi">:</span> <span class="s1">'</span><span class="s">*'</span>
+            <span class="na">Condition</span><span class="pi">:</span>
+              <span class="na">Bool</span><span class="pi">:</span>
+                <span class="s1">'</span><span class="s">aws:SecureTransport'</span><span class="pi">:</span> <span class="no">false</span>
+            <span class="na">Effect</span><span class="pi">:</span> <span class="s">Deny</span>
+            <span class="na">Action</span><span class="pi">:</span> <span class="s1">'</span><span class="s">*'</span>
+            <span class="na">Resource</span><span class="pi">:</span>
+              <span class="pi">-</span> <span class="kt">!GetAtt</span> <span class="s2">"</span><span class="s">TerraformStateBucket.Arn"</span>
+              <span class="pi">-</span> <span class="kt">!Sub</span>
+                <span class="pi">-</span> <span class="s2">"</span><span class="s">${Bucket}/*"</span>
+                <span class="pi">-</span> <span class="na">Bucket</span><span class="pi">:</span> <span class="kt">!GetAtt</span> <span class="s2">"</span><span class="s">TerraformStateBucket.Arn"</span>
+</code></pre></div></div>
+
+<p>The second statement uses the <a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_variables.html#principaltable">aws:PrincipalType</a> and <a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html#condition-keys-principaltag">aws:PrincipalTag</a> condition keys to deny access to any IAM users lacking the <code class="language-plaintext highlighter-rouge">Terraformer</code> principal tag we introduced in <a href="/tf-skeleton/2021/02/10/part-4-backend-role.html">Part 4</a>:</p>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code>          <span class="pi">-</span> <span class="na">Sid</span><span class="pi">:</span> <span class="s">DenyNonTerraformerUsers</span>
+            <span class="na">Principal</span><span class="pi">:</span> <span class="s2">"</span><span class="s">*"</span>
+            <span class="na">Condition</span><span class="pi">:</span>
+              <span class="na">StringEquals</span><span class="pi">:</span>
+                <span class="s">aws:PrincipalType: User</span>
+              <span class="na">StringNotLike</span><span class="pi">:</span>
+                <span class="s1">'</span><span class="s">aws:PrincipalTag/Terraformer'</span><span class="pi">:</span> <span class="s1">'</span><span class="s">*'</span>
+            <span class="na">Effect</span><span class="pi">:</span> <span class="s">Deny</span>
+            <span class="na">Action</span><span class="pi">:</span> <span class="s1">'</span><span class="s">*'</span>
+            <span class="na">Resource</span><span class="pi">:</span>
+              <span class="pi">-</span> <span class="kt">!GetAtt</span> <span class="s2">"</span><span class="s">TerraformStateBucket.Arn"</span>
+              <span class="pi">-</span> <span class="kt">!Sub</span>
+                <span class="pi">-</span> <span class="s2">"</span><span class="s">${Bucket}/*"</span>
+                <span class="pi">-</span> <span class="na">Bucket</span><span class="pi">:</span> <span class="kt">!GetAtt</span> <span class="s2">"</span><span class="s">TerraformStateBucket.Arn"</span>
+</code></pre></div></div>
+
+<p>The third statement begins differentiating between administrative and non-administrative access to the state. We do so again using the <code class="language-plaintext highlighter-rouge">Terraformer</code> tag, this time inspecting its value.</p>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code>          <span class="pi">-</span> <span class="na">Sid</span><span class="pi">:</span> <span class="s">RestrictTerraformNonAdmins</span>
+            <span class="na">Principal</span><span class="pi">:</span> <span class="s2">"</span><span class="s">*"</span>
+            <span class="na">Condition</span><span class="pi">:</span>
+              <span class="na">StringEquals</span><span class="pi">:</span>
+                <span class="s">aws:PrincipalType: User</span>
+              <span class="na">StringLike</span><span class="pi">:</span>
+                <span class="s1">'</span><span class="s">aws:PrincipalTag/Terraformer'</span><span class="pi">:</span> <span class="s1">'</span><span class="s">*'</span>
+              <span class="na">StringNotEquals</span><span class="pi">:</span>
+                <span class="s1">'</span><span class="s">aws:PrincipalTag/Terraformer'</span><span class="pi">:</span> <span class="s1">'</span><span class="s">Admin'</span>
+            <span class="na">Effect</span><span class="pi">:</span> <span class="s">Deny</span>
+            <span class="na">NotAction</span><span class="pi">:</span>
+              <span class="pi">-</span> <span class="s1">'</span><span class="s">s3:List*'</span>
+              <span class="pi">-</span> <span class="s1">'</span><span class="s">s3:Get*'</span>
+              <span class="pi">-</span> <span class="s1">'</span><span class="s">s3:Describe*'</span>
+              <span class="pi">-</span> <span class="s1">'</span><span class="s">s3:PutObject'</span>
+              <span class="pi">-</span> <span class="s1">'</span><span class="s">s3:DeleteObject'</span>
+            <span class="na">Resource</span><span class="pi">:</span>
+              <span class="pi">-</span> <span class="kt">!GetAtt</span> <span class="s2">"</span><span class="s">TerraformStateBucket.Arn"</span>
+              <span class="pi">-</span> <span class="kt">!Sub</span>
+                <span class="pi">-</span> <span class="s2">"</span><span class="s">${Bucket}/*"</span>
+                <span class="pi">-</span> <span class="na">Bucket</span><span class="pi">:</span> <span class="kt">!GetAtt</span> <span class="s2">"</span><span class="s">TerraformStateBucket.Arn"</span>
+</code></pre></div></div>
+
+<p>If the IAM user has the <code class="language-plaintext highlighter-rouge">Terraformer</code> tag, but its value is not <code class="language-plaintext highlighter-rouge">Admin</code>, we grant non-administrative access to that user. We use IAM’s <code class="language-plaintext highlighter-rouge">NotAction</code> to whitelist the permitted actions.</p>
+
+<p>Notably, non-administrative access permits <code class="language-plaintext highlighter-rouge">s3:DeleteObject</code> but <em>not</em> <code class="language-plaintext highlighter-rouge">s3:DeleteObjectVersion</code>. Since our state bucket is versioned (see <a href="/tf-skeleton/2021/02/17/part-5-cfn-terraform-state.html#define-operational-infrastructure-with-cloudformation">Part 5</a>), granting <code class="language-plaintext highlighter-rouge">s3:DeleteObject</code> is not inherently dangerous because all it does is add a delete marker to the object; you can always restore the version before the delete marker. Granting developers the ability to add delete markers aids state migration, so we do so here.</p>
+
+<p>The fourth statement denies access to all IAM roles other than our backend role:</p>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code>          <span class="pi">-</span> <span class="na">Sid</span><span class="pi">:</span> <span class="s">DenyNonBackendRoles</span>
+            <span class="na">Principal</span><span class="pi">:</span> <span class="s2">"</span><span class="s">*"</span>
+            <span class="na">Condition</span><span class="pi">:</span>
+              <span class="na">StringEquals</span><span class="pi">:</span>
+                <span class="s">aws:PrincipalType: AssumedRole</span>
+              <span class="na">StringNotLike</span><span class="pi">:</span>
+                <span class="s">aws:userId:</span>
+                  <span class="s">- !Sub</span>
+                    <span class="s">- "${TerraformBackendRoleId}:*"</span>
+                    <span class="s">- TerraformBackendRoleId</span><span class="pi">:</span> <span class="kt">!GetAtt</span> <span class="s2">"</span><span class="s">TerraformBackendRole.RoleId"</span>
+            <span class="na">Effect</span><span class="pi">:</span> <span class="s">Deny</span>
+            <span class="na">Action</span><span class="pi">:</span> <span class="s1">'</span><span class="s">*'</span>
+            <span class="na">Resource</span><span class="pi">:</span>
+              <span class="pi">-</span> <span class="kt">!GetAtt</span> <span class="s2">"</span><span class="s">TerraformStateBucket.Arn"</span>
+              <span class="pi">-</span> <span class="kt">!Sub</span>
+                <span class="pi">-</span> <span class="s2">"</span><span class="s">${Bucket}/*"</span>
+                <span class="pi">-</span> <span class="na">Bucket</span><span class="pi">:</span> <span class="kt">!GetAtt</span> <span class="s2">"</span><span class="s">TerraformStateBucket.Arn"</span>
+</code></pre></div></div>
+
+<p>I did not find the syntax intuitive for restricting access to a specific IAM role. Specifying the role ARN in the <code class="language-plaintext highlighter-rouge">Principal</code> property does not work. <a href="https://aws.amazon.com/blogs/security/how-to-restrict-amazon-s3-bucket-access-to-a-specific-iam-role/">This AWS post explains why</a> and demonstrates using the <code class="language-plaintext highlighter-rouge">StringNotLike</code> and <a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_variables.html#principaltable">aws:userId</a> combination I use here.</p>
+
+<p>The fifth statement grants the backend role access:</p>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code>          <span class="pi">-</span> <span class="na">Sid</span><span class="pi">:</span> <span class="s">ResrictBackendRoleToReadWrite</span>
+            <span class="na">Principal</span><span class="pi">:</span> <span class="s2">"</span><span class="s">*"</span>
+            <span class="na">Condition</span><span class="pi">:</span>
+              <span class="na">StringEquals</span><span class="pi">:</span>
+                <span class="s">aws:PrincipalType: AssumedRole</span>
+              <span class="na">StringLike</span><span class="pi">:</span>
+                <span class="s">aws:userId:</span>
+                  <span class="s">- !Sub</span>
+                    <span class="s">- "${TerraformBackendRoleId}:*"</span>
+                    <span class="s">- TerraformBackendRoleId</span><span class="pi">:</span> <span class="kt">!GetAtt</span> <span class="s2">"</span><span class="s">TerraformBackendRole.RoleId"</span>
+            <span class="na">Effect</span><span class="pi">:</span> <span class="s">Deny</span>
+            <span class="na">NotAction</span><span class="pi">:</span>
+              <span class="pi">-</span> <span class="s1">'</span><span class="s">s3:ListBucket'</span>
+              <span class="pi">-</span> <span class="s1">'</span><span class="s">s3:GetBucketVersioning'</span>
+              <span class="pi">-</span> <span class="s1">'</span><span class="s">s3:GetObject'</span>
+              <span class="pi">-</span> <span class="s1">'</span><span class="s">s3:PutObject'</span>
+            <span class="na">Resource</span><span class="pi">:</span>
+              <span class="pi">-</span> <span class="kt">!GetAtt</span> <span class="s2">"</span><span class="s">TerraformStateBucket.Arn"</span>
+              <span class="pi">-</span> <span class="kt">!Sub</span>
+                <span class="pi">-</span> <span class="s2">"</span><span class="s">${Bucket}/*"</span>
+                <span class="pi">-</span> <span class="na">Bucket</span><span class="pi">:</span> <span class="kt">!GetAtt</span> <span class="s2">"</span><span class="s">TerraformStateBucket.Arn"</span>
+</code></pre></div></div>
+
+<p>And our final statement denies access to any other principal types (e.g., FederatedUsers), as we’re not considering those as part of this skeleton.</p>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code>          <span class="pi">-</span> <span class="na">Sid</span><span class="pi">:</span> <span class="s">DenyAllOtherPrincipals</span>
+            <span class="na">Principal</span><span class="pi">:</span> <span class="s2">"</span><span class="s">*"</span>
+            <span class="na">Condition</span><span class="pi">:</span>
+              <span class="na">StringNotEquals</span><span class="pi">:</span>
+                <span class="s">aws:PrincipalType:</span>
+                  <span class="s">- AssumedRole</span>
+                  <span class="s">- Account</span>
+                  <span class="s">- User</span>
+            <span class="na">Effect</span><span class="pi">:</span> <span class="s">Deny</span>
+            <span class="na">Action</span><span class="pi">:</span> <span class="s1">'</span><span class="s">*'</span>
+            <span class="na">Resource</span><span class="pi">:</span>
+              <span class="pi">-</span> <span class="kt">!GetAtt</span> <span class="s2">"</span><span class="s">TerraformStateBucket.Arn"</span>
+              <span class="pi">-</span> <span class="kt">!Sub</span>
+                <span class="pi">-</span> <span class="s2">"</span><span class="s">${Bucket}/*"</span>
+                <span class="pi">-</span> <span class="na">Bucket</span><span class="pi">:</span> <span class="kt">!GetAtt</span> <span class="s2">"</span><span class="s">TerraformStateBucket.Arn"</span>
+</code></pre></div></div>
+
+<p>A summary of all changes is available by <a href="https://github.com/thirstydeveloper/terraform-terragrunt-skeleton/compare/release/1.4...release/1.5">viewing the diffs from part 5</a>.</p>
+
+<p>There are three last items to note about this policy.</p>
+
+<p>First, the bucket policy does not contain any permissions for users who have the <code class="language-plaintext highlighter-rouge">Terraformer</code> tag set to <code class="language-plaintext highlighter-rouge">Admin</code>. The lack of permissions means such users will have whatever access the IAM policy attached to their IAM user grants, presumably full access to S3.</p>
+
+<p>Second, the bucket policy does not explicitly grant the AWS account’s root user access. <a href="https://aws.amazon.com/premiumsupport/knowledge-center/s3-access-denied-bucket-policy/">AWS always allows the root user access</a> to remove or modify bucket policies of buckets owned by that root user’s account, making it unnecessary to specify here.</p>
+
+<p>Finally, none of the permissions in the policy grant either adding or modifying the bucket policy, which means that aside from the root user, only <code class="language-plaintext highlighter-rouge">Admin</code> Terraformers can do so, assuming those admins have the requisite permissions on their IAM user).</p>
+
+<h1 id="applying-the-state-bucket-policy">Applying the State Bucket Policy</h1>
+
+<p>We’re now ready to deploy the bucket policy.</p>
+
+<p>First, change the <code class="language-plaintext highlighter-rouge">Terraformer</code> tag on your IAM user to have a value of <code class="language-plaintext highlighter-rouge">Admin</code>.</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>aws iam tag-user <span class="se">\</span>
+  <span class="nt">--user-name</span> <span class="k">${</span><span class="nv">IAM_USER</span><span class="k">}</span> <span class="se">\</span>
+  <span class="nt">--tags</span> <span class="s1">'{
+    "Key": "Terraformer",
+    "Value": "Admin"
+  }'</span>
+</code></pre></div></div>
+
+<p>Second, if Terragrunt created the state bucket for you, it may already have a bucket policy attached to it. Delete it using the following CLI command, replacing the bucket name as appropriate:</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>aws s3api delete-bucket-policy <span class="nt">--bucket</span> terraform-skeleton-state
+</code></pre></div></div>
+
+<p>Deploy the updated CloudFormation template using the <code class="language-plaintext highlighter-rouge">init-admin</code> Makefile target we added in <a href="/tf-skeleton/2021/02/10/part-4-backend-role.html">Part 4</a>.<sup id="fnref:1" role="doc-noteref"><a href="#fn:1" class="footnote">1</a></sup></p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>make init-admin
+aws cloudformation deploy <span class="se">\</span>
+		<span class="nt">--template-file</span> init/admin/init-admin-account.cf.yml <span class="se">\</span>
+		<span class="nt">--stack-name</span> tf-admin-init <span class="se">\</span>
+		<span class="nt">--capabilities</span> CAPABILITY_NAMED_IAM <span class="se">\</span>
+		<span class="nt">--parameter-overrides</span> <span class="se">\</span>
+			<span class="nv">AdminAccountId</span><span class="o">=</span>&lt;omitted&gt; <span class="se">\</span>
+			<span class="nv">StateBucketName</span><span class="o">=</span>terraform-skeleton-state <span class="se">\</span>
+			<span class="nv">StateLogBucketName</span><span class="o">=</span>terraform-skeleton-state-logs <span class="se">\</span>
+			<span class="nv">LockTableName</span><span class="o">=</span>terraform-skeleton-state-locks
+
+Waiting <span class="k">for </span>changeset to be created..
+Waiting <span class="k">for </span>stack create/update to <span class="nb">complete
+</span>Successfully created/updated stack - tf-admin-init
+aws cloudformation update-termination-protection <span class="se">\</span>
+		<span class="nt">--stack-name</span> tf-admin-init <span class="se">\</span>
+		<span class="nt">--enable-termination-protection</span>
+<span class="o">{</span>
+    <span class="s2">"StackId"</span>: <span class="s2">"arn:aws:cloudformation:us-east-1:&lt;omitted&gt;:stack/tf-admin-init/8704b070-5f61-11eb-9ff1-0eea077046db"</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>Let’s see if it works as expected.</p>
+
+<h1 id="testing-the-state-bucket-policy">Testing the State Bucket Policy</h1>
+
+<p>First, we can quickly verify the backend role has the access it requires by running <code class="language-plaintext highlighter-rouge">terragrunt apply-all</code>.</p>
+
+<p>Verifying user-level access requires manipulating the <code class="language-plaintext highlighter-rouge">Terraformer</code> tag. Ideally, we’d have these tests automated and run as part of a CI pipeline. Perhaps we’ll get to that in another post.</p>
+
+<p>Remove the <code class="language-plaintext highlighter-rouge">Terraformer</code> tag from your user altogether:</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>aws iam untag-user <span class="nt">--user-name</span> <span class="k">${</span><span class="nv">IAM_USER</span><span class="k">}</span> <span class="nt">--tag-keys</span> Terraformer
+</code></pre></div></div>
+
+<p>and verify you can’t even list the state bucket now:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>aws s3 ls s3://terraform-skeleton-state
+
+An error occurred (AccessDenied) when calling the ListObjectsV2 operation: Access Denied
+</code></pre></div></div>
+
+<p>Next, set the <code class="language-plaintext highlighter-rouge">Terraformer</code> tag on your IAM user to something other than <code class="language-plaintext highlighter-rouge">Admin</code>. For instance:</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>aws iam tag-user <span class="se">\</span>
+  <span class="nt">--user-name</span> <span class="k">${</span><span class="nv">IAM_USER</span><span class="k">}</span> <span class="se">\</span>
+  <span class="nt">--tags</span> <span class="s1">'{
+    "Key": "Terraformer",
+    "Value": "User"
+  }'</span>
+</code></pre></div></div>
+
+<p>Then verify you cannot update the state bucket’s policy:</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>aws s3api put-bucket-policy <span class="nt">--bucket</span> terraform-skeleton-state <span class="nt">--policy</span> <span class="s2">""</span>
+
+An error occurred <span class="o">(</span>AccessDenied<span class="o">)</span> when calling the PutBucketPolicy operation: Access Denied
+</code></pre></div></div>
+
+<p>or delete it:</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>aws s3api delete-bucket-policy <span class="nt">--bucket</span> terraform-skeleton-state
+
+An error occurred <span class="o">(</span>AccessDenied<span class="o">)</span> when calling the DeleteBucketPolicy operation: Access Denied
+</code></pre></div></div>
+
+<p>Also, verify you <em>can</em> delete a state object:</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>aws s3 <span class="nb">rm </span>s3://terraform-skeleton-state/app/dev/test-stack.tfstate
+delete: s3://terraform-skeleton-state/app/dev/test-stack.tfstate
+</code></pre></div></div>
+
+<p>but can’t delete an object version:</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">DELETE_MARKER_VERSION</span><span class="o">=</span><span class="si">$(</span>aws s3api list-object-versions <span class="se">\</span>
+  <span class="nt">--bucket</span> terraform-skeleton-state <span class="se">\</span>
+  <span class="nt">--prefix</span> app/dev/test-stack.tfstate <span class="se">\</span>
+  <span class="nt">--query</span> <span class="s1">'DeleteMarkers[?IsLatest==`true`].VersionId'</span> | jq <span class="nt">-r</span> <span class="s1">'.[0]'</span> <span class="se">\</span>
+<span class="si">)</span>
+
+aws s3api delete-object <span class="se">\</span>
+  <span class="nt">--bucket</span> terraform-skeleton-state <span class="se">\</span>
+  <span class="nt">--key</span> app/dev/test-stack.tfstate <span class="se">\</span>
+  <span class="nt">--version-id</span> <span class="k">${</span><span class="nv">DELETE_MARKER_VERSION</span><span class="k">}</span>
+
+An error occurred <span class="o">(</span>AccessDenied<span class="o">)</span> when calling the DeleteObject operation: Access Denied
+</code></pre></div></div>
+
+<p>The inability to remove the delete marker does introduce a hurdle users will have to clear to restore state files, but restoration is still possible. See the footnotes for more information.<sup id="fnref:2" role="doc-noteref"><a href="#fn:2" class="footnote">2</a></sup></p>
+
+<p>Change the <code class="language-plaintext highlighter-rouge">Terraformer</code> tag to <code class="language-plaintext highlighter-rouge">Admin</code> again:</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>aws iam tag-user <span class="se">\</span>
+  <span class="nt">--user-name</span> <span class="k">${</span><span class="nv">IAM_USER</span><span class="k">}</span> <span class="se">\</span>
+  <span class="nt">--tags</span> <span class="s1">'{
+    "Key": "Terraformer",
+    "Value": "Admin"
+  }'</span>
+</code></pre></div></div>
+
+<p>and delete the delete marker again, verifying it works this time.</p>
+
+<div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>aws s3api delete-object <span class="se">\</span>
+  <span class="nt">--bucket</span> terraform-skeleton-state <span class="se">\</span>
+  <span class="nt">--key</span> app/dev/test-stack.tfstate <span class="se">\</span>
+  <span class="nt">--version-id</span> <span class="k">${</span><span class="nv">DELETE_MARKER_VERSION</span><span class="k">}</span>
+
+<span class="o">{</span>
+    <span class="s2">"DeleteMarker"</span>: <span class="nb">true</span>,
+    <span class="s2">"VersionId"</span>: <span class="s2">"..."</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>That about covers it. We now have a bucket policy restricting access to Terraform’s state to only authorized principals.</p>
+
+<h1 id="cleanup">Cleanup</h1>
+
+<p>With the bucket policy in place, let’s turn our attention to a couple of other hardening items we can tackle in the CloudFormation template: protecting the logs bucket and removing unnecessary permissions from the backend role.</p>
+
+<h2 id="protecting-the-logs-bucket">Protecting the Logs Bucket</h2>
+
+<p>As discussed in <a href="/tf-skeleton/2021/01/28/part-3-aws-backend.html#limitations">Part 3</a>, when Terragrunt creates the log bucket for you, it does not enable encryption or explicitly block public access. We can rectify both of those issues now that the bucket is under CloudFormation’s control.</p>
+
+<p>Using our <code class="language-plaintext highlighter-rouge">TerraformStateBucket</code> resource as a template, add <code class="language-plaintext highlighter-rouge">BucketEncryption</code> and <code class="language-plaintext highlighter-rouge">PublicAccessBlockConfiguration</code> properties to the log bucket:</p>
+
+<div class="language-yaml highlighter-rouge"><div class="highlight"><pre class="highlight"><code>  <span class="na">TerraformStateLogBucket</span><span class="pi">:</span>
+    <span class="na">Type</span><span class="pi">:</span> <span class="s1">'</span><span class="s">AWS::S3::Bucket'</span>
+    <span class="na">DeletionPolicy</span><span class="pi">:</span> <span class="s">Retain</span>
+    <span class="na">UpdateReplacePolicy</span><span class="pi">:</span> <span class="s">Retain</span>
+    <span class="na">Properties</span><span class="pi">:</span>
+      <span class="na">BucketName</span><span class="pi">:</span> <span class="kt">!Ref</span> <span class="s">StateLogBucketName</span>
+      <span class="na">AccessControl</span><span class="pi">:</span> <span class="s">LogDeliveryWrite</span>
+      <span class="na">BucketEncryption</span><span class="pi">:</span>
+        <span class="na">ServerSideEncryptionConfiguration</span><span class="pi">:</span>
+          <span class="pi">-</span> <span class="na">ServerSideEncryptionByDefault</span><span class="pi">:</span>
+              <span class="na">SSEAlgorithm</span><span class="pi">:</span> <span class="s">aws:kms</span>
+      <span class="na">PublicAccessBlockConfiguration</span><span class="pi">:</span>
+        <span class="na">BlockPublicAcls</span><span class="pi">:</span> <span class="s">True</span>
+        <span class="na">BlockPublicPolicy</span><span class="pi">:</span> <span class="s">True</span>
+        <span class="na">IgnorePublicAcls</span><span class="pi">:</span> <span class="s">True</span>
+        <span class="na">RestrictPublicBuckets</span><span class="pi">:</span> <span class="s">True</span>
+</code></pre></div></div>
+
+<p>Run <code class="language-plaintext highlighter-rouge">make init-admin</code> to deploy.</p>
+
+<h2 id="backend-role-permissions">Backend Role Permissions</h2>
+
+<p>When we created the backend role in <a href="/tf-skeleton/2021/02/10/part-4-backend-role.html#the-backend-role">Part 4</a>, we granted it permissions to create S3 buckets and DynamoDB tables because Terragrunt managed our state bucket and lock table. We can remove those permissions now that CloudFormation deploys both:</p>
+
+<div class="language-diff highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="gh">diff --git a/init/admin/init-admin-account.cf.yml b/init/admin/init-admin-account.cf.yml
+index b8dcda0..3aed8e5 100644
+</span><span class="gd">--- a/init/admin/init-admin-account.cf.yml
+</span><span class="gi">+++ b/init/admin/init-admin-account.cf.yml
+</span><span class="p">@@ -122,27 +122,6 @@</span> Resources:
+               - 'dynamodb:PutItem'
+               - 'dynamodb:DeleteItem'
+             Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${LockTableName}"
+<span class="gd">-          - Sid: AllowStateBucketCreation
+-            Effect: Allow
+-            Action:
+-              - 's3:GetBucketAcl'
+-              - 's3:GetBucketLogging'
+-              - 's3:CreateBucket'
+-              - 's3:PutBucketPublicAccessBlock'
+-              - 's3:PutBucketTagging'
+-              - 's3:PutBucketPolicy'
+-              - 's3:PutBucketVersioning'
+-              - 's3:PutEncryptionConfiguration'
+-              - 's3:PutBucketAcl'
+-              - 's3:PutBucketLogging'
+-            Resource:
+-              - !Sub "arn:aws:s3:::${StateBucketName}"
+-              - !Sub "arn:aws:s3:::${StateLogBucketName}"
+-          - Sid: AllowLockTableCreation
+-            Effect: Allow
+-            Action:
+-              - 'dynamodb:CreateTable'
+-            Resource: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${LockTableName}"
+</span></code></pre></div></div>
+
+<p>Run a <code class="language-plaintext highlighter-rouge">terragrunt apply-all</code> to verify all’s well.</p>
+
+<h1 id="whats-next">What’s Next?</h1>
+
+<p>In this post, we’ve significantly enhanced the protections surrounding the Terraform state. Looking back at these first six entries, we’ve covered a lot of ground, and I think it will be worthwhile to take a step back and summarize what we’ve done so far. After a recap, I’d like to start covering continuous integration with Terraform and Terragrunt. We’ll see where that takes us.</p>
+
+<h1 id="footnotes">Footnotes</h1>
+
+<div class="footnotes" role="doc-endnotes">
+  <ol>
+    <li id="fn:1" role="doc-endnote">
+
+      <p>I hope that you don’t encounter any errors deploying the bucket policy. If you do, AWS is often not much help diagnosing what went wrong. Here are some pointers.</p>
+
+      <p>If <code class="language-plaintext highlighter-rouge">make init-admin</code> fails, it will likely say:</p>
+
+      <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Failed to create/update the stack. Run the following <span class="nb">command </span>to fetch the
+list of events leading up to the failure
+aws cloudformation describe-stack-events <span class="nt">--stack-name</span> tf-admin-init
+</code></pre></div>      </div>
+
+      <p>If you do so, you’ll get a JSON dump of events. Since you presumably failed when creating the bucket policy, look for an event with a <code class="language-plaintext highlighter-rouge">ResourceStatus</code> field set to <code class="language-plaintext highlighter-rouge">CREATE_FAILED</code>. Here’s an abbreviated example:</p>
+
+      <div class="language-json highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span><span class="w">  
+    </span><span class="nl">"StackName"</span><span class="p">:</span><span class="w"> </span><span class="s2">"tf-admin-init"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"ResourceStatus"</span><span class="p">:</span><span class="w"> </span><span class="s2">"CREATE_FAILED"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"ResourceStatusReason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Invalid policy syntax. (Service: Amazon S3; Status Code: 400; Error Code: MalformedPolicy; Request ID: 9EB1BD50BCF1FCB7; S3 Extended Request ID: hHkqY/snGYyhc4paSxhBT1IzpmgoWjKvz5I/JYiYUKu3PLSn1CWuAceLU7QEckf/omDhF4ZdeGU=; Proxy: null)"</span><span class="p">,</span><span class="w">
+    </span><span class="nl">"ResourceProperties"</span><span class="p">:</span><span class="w"> </span><span class="s2">"{</span><span class="se">\"</span><span class="s2">Bucket</span><span class="se">\"</span><span class="s2">:</span><span class="se">\"</span><span class="s2">terraform-skeleton-state</span><span class="se">\"</span><span class="s2">..."</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div>      </div>
+
+      <p>If you have an <code class="language-plaintext highlighter-rouge">Invalid policy syntax</code> error, I recommend removing statements until the policy works, then adding them back in one-by-one until you find the problem. <a href="#fnref:1" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+    <li id="fn:2" role="doc-endnote">
+
+      <p>Since users cannot delete object versions, they cannot restore a state file by deleting its delete marker since it is itself an object version.</p>
+
+      <p>As discussed in the AWS docs <a href="https://aws.amazon.com/premiumsupport/knowledge-center/s3-undelete-configuration/">here</a> and <a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/RestoringPreviousVersions.html">here</a>, users can still restore state files by copying a previous version to become the latest. Here’s an example of how:</p>
+
+      <p>Step 1: Find version to restore (e.g., using the <code class="language-plaintext highlighter-rouge">LastModified</code> field to limit the search area).</p>
+
+      <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code>aws s3api list-object-versions <span class="se">\</span>
+  <span class="nt">--bucket</span> terraform-skeleton-state <span class="se">\</span>
+  <span class="nt">--key</span> app/dev/test-stack.tfstate <span class="se">\</span>
+  <span class="nt">--query</span> <span class="s1">'Versions[?contains(LastModified, `'</span><span class="s2">"2021-02-20"</span><span class="s1">'`)]'</span> <span class="se">\</span>
+  | jq <span class="s1">'.[] | { Key, VersionId, LastModified }'</span>
+
+<span class="o">{</span>
+  <span class="s2">"Key"</span>: <span class="s2">"app/stage/test-stack.tfstate"</span>,
+  <span class="s2">"VersionId"</span>: <span class="s2">"lwMes1R1AfkEZ.lQ4U9d217yeU7rWbcj"</span>,
+  <span class="s2">"LastModified"</span>: <span class="s2">"2021-02-20T13:03:50+00:00"</span>
+<span class="o">}</span>
+</code></pre></div>      </div>
+
+      <p>Step 2: Copy the desired object version to make it the new latest version, replacing <code class="language-plaintext highlighter-rouge">${VERSION_ID}</code> as appropriate.</p>
+
+      <div class="language-bash highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nv">BUCKET</span><span class="o">=</span>terraform-skeleton-state
+<span class="nv">PREFIX</span><span class="o">=</span>app/dev/test-stack.tfstate
+<span class="nv">VERSION</span><span class="o">=</span>TgfUNdVuoZKwSOHF1QeGO_nB8iZGzE3f
+
+aws s3api copy-object <span class="se">\</span>
+  <span class="nt">--copy-source</span> <span class="s2">"</span><span class="k">${</span><span class="nv">BUCKET</span><span class="k">}</span><span class="s2">/</span><span class="k">${</span><span class="nv">PREFIX</span><span class="k">}</span><span class="s2">?versionId=</span><span class="k">${</span><span class="nv">VERSION</span><span class="k">}</span><span class="s2">"</span> <span class="se">\</span>
+  <span class="nt">--key</span> <span class="k">${</span><span class="nv">PREFIX</span><span class="k">}</span> <span class="se">\</span>
+  <span class="nt">--bucket</span> <span class="k">${</span><span class="nv">BUCKET</span><span class="k">}</span>
+
+<span class="o">{</span>  
+    ...
+    <span class="s2">"CopyObjectResult"</span>: <span class="o">{</span>
+        <span class="s2">"ETag"</span>: <span class="s2">"</span><span class="se">\"</span><span class="s2">...</span><span class="se">\"</span><span class="s2">"</span>,
+        <span class="s2">"LastModified"</span>: <span class="s2">"2021-02-20T13:36:47+00:00"</span>
+    <span class="o">}</span>
+<span class="o">}</span>
+</code></pre></div>      </div>
+      <p><a href="#fnref:2" class="reversefootnote" role="doc-backlink">&#8617;</a></p>
+    </li>
+  </ol>
+</div>
+
+  </div><div id="disqus_thread"></div>
+  <script>
+    var disqus_config = function () {
+      this.page.url = 'https://thirstydeveloper.io/tf-skeleton/2021/02/25/part-6-protecting-state.html';
+      this.page.identifier = 'https://thirstydeveloper.io/tf-skeleton/2021/02/25/part-6-protecting-state.html';
+    };
+
+    (function() {
+      var d = document, s = d.createElement('script');
+
+      s.src = 'https://thirstydeveloper.disqus.com/embed.js';
+
+      s.setAttribute('data-timestamp', +new Date());
+      (d.head || d.body).appendChild(s);
+    })();
+  </script>
+  <noscript>Please enable JavaScript to view the <a href="https://disqus.com/?ref_noscript" rel="nofollow">comments powered by Disqus.</a></noscript><a class="u-url" href="/tf-skeleton/2021/02/25/part-6-protecting-state.html" hidden></a>
+</article>
+
+      </div>
+    </main><footer class="site-footer h-card">
+  <data class="u-url" href="/"></data>
+
+  <div class="wrapper">
+
+    <h2 class="footer-heading">thirstydeveloper</h2>
+
+    <div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li class="p-name">Chris Kent</li><li><a class="u-email" href="mailto:thirstydeveloper@gmail.com">thirstydeveloper@gmail.com</a></li></ul>
+      </div>
+
+      <div class="footer-col footer-col-2"><ul class="social-media-list"><li><a href="https://github.com/thirstydeveloper"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#github"></use></svg> <span class="username">thirstydeveloper</span></a></li><li><a href="https://www.linkedin.com/in/thirstydeveloper"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#linkedin"></use></svg> <span class="username">thirstydeveloper</span></a></li><li><a href="https://www.twitter.com/thirstydev"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#twitter"></use></svg> <span class="username">thirstydev</span></a></li><li><a href="/feed.xml"><svg class="svg-icon"><use xlink:href="/assets/minima-social-icons.svg#rss"></use></svg> <span>rss</span></a></li></ul>
+</div>
+
+      <div class="footer-col footer-col-3">
+        <p>&copy; 2021 Chris Kent. All Rights Reserved. </p>
+      </div>
+    </div>
+
+  </div>
+
+</footer>
+</body>
+
+</html>
